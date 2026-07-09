@@ -1,0 +1,29 @@
+{
+  "modelName": "PaySim Isolation Forest Fraud Detector",
+  "modelType": "IsolationForest",
+  "modelVersion": "1.0.0",
+  "trainingDate": "2026-07-09T19:25:49.960101+00:00",
+  "datasetName": "PaySim Synthetic Financial Transactions",
+  "numberOfTrainingRows": 200000,
+  "featureList": [
+    "amount",
+    "hour_of_day",
+    "transaction_frequency",
+    "failed_attempt_count",
+    "country_risk_score",
+    "new_device",
+    "new_country",
+    "merchant_risk_score",
+    "customer_average_amount_ratio",
+    "source_old_balance",
+    "source_new_balance",
+    "destination_old_balance",
+    "destination_new_balance",
+    "balance_delta",
+    "transaction_type_encoded",
+    "flagged_fraud"
+  ],
+  "modelPath": "C:\\Users\\Owner\\IdeaProjects\\banking-transaction-risk-fraud-monitoring\\ml-service\\models\\fraud_model.joblib",
+  "decisionScoreMin": -0.2283341846932434,
+  "decisionScoreMax": 0.13061304673062485
+}

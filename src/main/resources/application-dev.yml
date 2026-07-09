@@ -1,0 +1,8 @@
+logging:
+  level:
+    org.horndevelopmentteam.bankingtransactionriskfraudmonitoring: DEBUG
+    org.hibernate.SQL: DEBUG
+
+spring:
+  jpa:
+    show-sql: true

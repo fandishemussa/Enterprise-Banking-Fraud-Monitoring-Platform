@@ -1,0 +1,55 @@
+HELP.md
+target/
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### VS Code ###
+.vscode/
+
+### Data engineering - keep only the small sample CSV in git ###
+data/raw/
+data/processed/
+*.csv
+!data/samples/*.csv
+*.zip
+
+### Environment / secrets - never commit real env files, only *.example ###
+.env
+*.env
+!*.env.example
+.env.local
+.env.*.local
+
+### Frontend / Node (also see frontend/.gitignore) ###
+node_modules/
+.next/
+frontend/.next/
+frontend/node_modules/
+dist/
+

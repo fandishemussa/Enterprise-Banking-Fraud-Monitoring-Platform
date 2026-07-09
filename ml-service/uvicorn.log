@@ -1,0 +1,18 @@
+INFO:     Started server process [30508]
+INFO:     Waiting for application startup.
+INFO:app.main:Loaded model from C:\Users\Owner\IdeaProjects\banking-transaction-risk-fraud-monitoring\ml-service\models\fraud_model.joblib
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:58218 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53181 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62370 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51802 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51802 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55029 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55029 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49998 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54080 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55139 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64850 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49674 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50470 - "GET /health HTTP/1.1" 200 OK

@@ -1,0 +1,12 @@
+[  0.0s] Loading PaySim dataset from C:\Users\Owner\IdeaProjects\banking-transaction-risk-fraud-monitoring\data\raw\paysim (first 200,000 rows) ...
+[   0.3s] Loaded 200,000 raw rows (0.3s)
+[   1.8s] Mapped 200,000 rows to platform schema (1.5s)
+[   2.0s] Built feature matrix (200000, 16) (0.2s)
+[   2.0s] Training IsolationForest on 200,000 rows x 16 features ...
+[   3.0s] Trained IsolationForest (1.0s)
+[   6.3s] Computed decision scores for score normalization (3.3s)
+[   6.4s] Saved model to C:\Users\Owner\IdeaProjects\banking-transaction-risk-fraud-monitoring\ml-service\models\fraud_model.joblib (0.1s)
+[   6.4s] Done.
+Trained on 200000 rows
+Model saved to C:\Users\Owner\IdeaProjects\banking-transaction-risk-fraud-monitoring\ml-service\models\fraud_model.joblib
+Metadata saved to C:\Users\Owner\IdeaProjects\banking-transaction-risk-fraud-monitoring\ml-service\models\model_metadata.json

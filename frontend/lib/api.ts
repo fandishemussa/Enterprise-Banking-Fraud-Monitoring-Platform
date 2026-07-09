@@ -1,0 +1,356 @@
+import { endpoints } from "@/lib/endpoints";
+import { clearSession, getToken } from "@/lib/auth";
+import {
+  mockAccounts,
+  mockAlerts,
+  mockAuditLogs,
+  mockCases,
+  mockCustomers,
+  mockDashboardSummary,
+  mockDataQualityResults,
+  mockDataQualityRuns,
+  mockDeadLetterTransactions,
+  mockMlHealth,
+  mockMlModelInfo,
+  mockPipelineMetrics,
+  mockPipelineRuns,
+  mockRiskScores,
+  mockTransactions,
+} from "@/lib/mock-data";
+import type {
+  Account,
+  ApiResult,
+  AppUser,
+  AuditLog,
+  BankingTransaction,
+  CreateUserPayload,
+  Customer,
+  DashboardSummary,
+  DataQualityResult,
+  DataQualityRun,
+  DeadLetterTransaction,
+  FraudAlert,
+  InvestigationCase,
+  LoginResponse,
+  MlHealth,
+  MlModelInfo,
+  PipelineMetrics,
+  PipelineRun,
+  RiskScore,
+  TestTransactionPayload,
+  TestTransactionResult,
+  UpdateUserPayload,
+} from "@/types";
+
+const REQUEST_TIMEOUT_MS = 4000;
+
+/** Thrown when the backend rejects a request as unauthenticated (401) or unauthorized (403) so
+ * callers/UI can distinguish "please log in" from "you don't have permission" from a generic
+ * network failure that should fall back to mock data. */
+export class ApiAuthError extends Error {
+  constructor(public status: 401 | 403) {
+    super(status === 401 ? "Authentication required" : "Access denied");
+  }
+}
+
+async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const token = getToken();
+    const headers = new Headers(init?.headers);
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+
+    const response = await fetch(url, { ...init, headers, signal: controller.signal, cache: "no-store" });
+
+    if (response.status === 401 || response.status === 403) {
+      if (response.status === 401 && token) {
+        clearSession();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("auth:session-expired"));
+        }
+      }
+      throw new ApiAuthError(response.status);
+    }
+    if (!response.ok) {
+      throw new Error(`Request to ${url} failed with status ${response.status}`);
+    }
+    return response;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/** Spring Boot responses are wrapped in ApiResponse<T> = { success, message, data, timestamp }. */
+async function fetchSpring<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetchWithTimeout(url, init);
+  const body = await response.json();
+  return body.data as T;
+}
+
+/** FastAPI ML service responses are returned directly (no envelope). */
+async function fetchMl<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetchWithTimeout(url, init);
+  return (await response.json()) as T;
+}
+
+async function withFallback<T>(fetcher: () => Promise<T>, mockData: T): Promise<ApiResult<T>> {
+  try {
+    const data = await fetcher();
+    return { data, usingMockData: false };
+  } catch {
+    return { data: mockData, usingMockData: true };
+  }
+}
+
+export async function getCustomers(): Promise<ApiResult<Customer[]>> {
+  return withFallback(() => fetchSpring<Customer[]>(endpoints.customers), mockCustomers);
+}
+
+export async function getAccounts(): Promise<ApiResult<Account[]>> {
+  return withFallback(() => fetchSpring<Account[]>(endpoints.accounts), mockAccounts);
+}
+
+export async function getTransactions(): Promise<ApiResult<BankingTransaction[]>> {
+  return withFallback(() => fetchSpring<BankingTransaction[]>(endpoints.transactions), mockTransactions);
+}
+
+export async function getRiskScores(): Promise<ApiResult<RiskScore[]>> {
+  return withFallback(() => fetchSpring<RiskScore[]>(endpoints.riskScores), mockRiskScores);
+}
+
+export async function getAlerts(): Promise<ApiResult<FraudAlert[]>> {
+  return withFallback(() => fetchSpring<FraudAlert[]>(endpoints.alerts), mockAlerts);
+}
+
+export async function updateAlertStatus(alertId: string, payload: { status: string }): Promise<ApiResult<FraudAlert | null>> {
+  try {
+    const data = await fetchSpring<FraudAlert>(endpoints.alertStatus(alertId), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return { data, usingMockData: false };
+  } catch {
+    return { data: null, usingMockData: true };
+  }
+}
+
+export async function assignAlert(alertId: string, payload: { assignedTo: string }): Promise<ApiResult<FraudAlert | null>> {
+  try {
+    const data = await fetchSpring<FraudAlert>(endpoints.alertAssign(alertId), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return { data, usingMockData: false };
+  } catch {
+    return { data: null, usingMockData: true };
+  }
+}
+
+export async function getCases(): Promise<ApiResult<InvestigationCase[]>> {
+  return withFallback(() => fetchSpring<InvestigationCase[]>(endpoints.cases), mockCases);
+}
+
+export async function createCase(payload: {
+  alertId: string;
+  assignedTo?: string;
+  notes?: string;
+}): Promise<ApiResult<InvestigationCase | null>> {
+  try {
+    const data = await fetchSpring<InvestigationCase>(endpoints.cases, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return { data, usingMockData: false };
+  } catch {
+    return { data: null, usingMockData: true };
+  }
+}
+
+export async function updateCase(
+  caseId: string,
+  payload: { status?: string; assignedTo?: string; notes?: string },
+): Promise<ApiResult<InvestigationCase | null>> {
+  try {
+    const data = await fetchSpring<InvestigationCase>(endpoints.caseById(caseId), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return { data, usingMockData: false };
+  } catch {
+    return { data: null, usingMockData: true };
+  }
+}
+
+export async function getAuditLogs(): Promise<ApiResult<AuditLog[]>> {
+  return withFallback(() => fetchSpring<AuditLog[]>(endpoints.auditLogs), mockAuditLogs);
+}
+
+export async function getPipelineRuns(): Promise<ApiResult<PipelineRun[]>> {
+  return withFallback(() => fetchSpring<PipelineRun[]>(endpoints.pipelineRuns), mockPipelineRuns);
+}
+
+export async function getPipelineMetrics(): Promise<ApiResult<PipelineMetrics>> {
+  return withFallback(() => fetchSpring<PipelineMetrics>(endpoints.pipelineMetrics), mockPipelineMetrics);
+}
+
+export async function getDataQualityRuns(): Promise<ApiResult<DataQualityRun[]>> {
+  return withFallback(() => fetchSpring<DataQualityRun[]>(endpoints.dataQualityRuns), mockDataQualityRuns);
+}
+
+export async function getDataQualityResults(): Promise<ApiResult<DataQualityResult[]>> {
+  return withFallback(() => fetchSpring<DataQualityResult[]>(endpoints.dataQualityResults), mockDataQualityResults);
+}
+
+export async function getDeadLetterTransactions(): Promise<ApiResult<DeadLetterTransaction[]>> {
+  return withFallback(() => fetchSpring<DeadLetterTransaction[]>(endpoints.deadLetterTransactions), mockDeadLetterTransactions);
+}
+
+export async function retryDeadLetterTransaction(id: string): Promise<ApiResult<DeadLetterTransaction | null>> {
+  try {
+    const data = await fetchSpring<DeadLetterTransaction>(endpoints.deadLetterRetry(id), { method: "POST" });
+    return { data, usingMockData: false };
+  } catch {
+    return { data: null, usingMockData: true };
+  }
+}
+
+export async function ignoreDeadLetterTransaction(id: string): Promise<ApiResult<DeadLetterTransaction | null>> {
+  try {
+    const data = await fetchSpring<DeadLetterTransaction>(endpoints.deadLetterIgnore(id), { method: "PATCH" });
+    return { data, usingMockData: false };
+  } catch {
+    return { data: null, usingMockData: true };
+  }
+}
+
+export async function getMlHealth(): Promise<ApiResult<MlHealth>> {
+  return withFallback(() => fetchMl<MlHealth>(endpoints.mlHealth), mockMlHealth);
+}
+
+export async function getMlModelInfo(): Promise<ApiResult<MlModelInfo>> {
+  return withFallback(() => fetchMl<MlModelInfo>(endpoints.mlModelInfo), mockMlModelInfo);
+}
+
+/**
+ * Spring Boot doesn't expose a single dashboard-summary endpoint, so this composes several
+ * calls and derives the KPIs client-side. If any core call fails, the whole summary falls back
+ * to mock data (rather than a part-real/part-mock blend) to keep the demo-data banner meaningful.
+ */
+export async function getDashboardSummary(): Promise<ApiResult<DashboardSummary>> {
+  try {
+    const [transactions, riskScores, alerts, cases, pipelineMetrics, mlHealth] = await Promise.all([
+      fetchSpring<BankingTransaction[]>(endpoints.transactions),
+      fetchSpring<RiskScore[]>(endpoints.riskScores),
+      fetchSpring<FraudAlert[]>(endpoints.alerts),
+      fetchSpring<InvestigationCase[]>(endpoints.cases),
+      fetchSpring<PipelineMetrics>(endpoints.pipelineMetrics),
+      fetchMl<MlHealth>(endpoints.mlHealth).catch(() => null),
+    ]);
+
+    const highRisk = riskScores.filter((r) => r.riskLevel === "HIGH").length;
+    const criticalRisk = riskScores.filter((r) => r.riskLevel === "CRITICAL").length;
+    const openAlerts = alerts.filter((a) => a.status === "OPEN" || a.status === "INVESTIGATING" || a.status === "ACKNOWLEDGED").length;
+    const confirmedCases = cases.filter((c) => c.decision === "CONFIRMED_FRAUD").length;
+    const falsePositives = alerts.filter((a) => a.status === "FALSE_POSITIVE").length;
+    const falsePositiveRate = alerts.length > 0 ? (falsePositives / alerts.length) * 100 : 0;
+    const averageRiskScore = riskScores.length > 0
+      ? riskScores.reduce((sum, r) => sum + r.finalScore, 0) / riskScores.length
+      : 0;
+
+    const riskDistribution = (["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const).map((riskLevel) => ({
+      riskLevel,
+      count: riskScores.filter((r) => r.riskLevel === riskLevel).length,
+    }));
+
+    const summary: DashboardSummary = {
+      totalTransactions: transactions.length,
+      highRiskTransactions: highRisk,
+      criticalRiskTransactions: criticalRisk,
+      openFraudAlerts: openAlerts,
+      confirmedFraudCases: confirmedCases,
+      falsePositiveRate,
+      averageRiskScore,
+      pipelineSuccessRate: pipelineMetrics.successRatePercent,
+      recordsProcessedToday: transactions.length,
+      mlServiceOnline: mlHealth !== null,
+      fraudTrend: mockDashboardSummary.fraudTrend,
+      riskDistribution,
+      alertStatusDistribution: mockDashboardSummary.alertStatusDistribution,
+      pipelineRecordsChart: mockDashboardSummary.pipelineRecordsChart,
+      recentAlerts: alerts.slice(0, 5),
+    };
+
+    return { data: summary, usingMockData: false };
+  } catch {
+    return { data: mockDashboardSummary, usingMockData: true };
+  }
+}
+
+// --- Auth / user management / test transactions -----------------------------------------
+// These hit the live backend directly (no mock fallback - there's nothing meaningful to fake
+// for a login or an admin action) and let ApiAuthError/Error propagate to the caller.
+
+export async function login(username: string, password: string): Promise<LoginResponse> {
+  return fetchSpring<LoginResponse>(endpoints.login, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export async function getCurrentUser(): Promise<AppUser> {
+  return fetchSpring<AppUser>(endpoints.me);
+}
+
+export async function getUsers(): Promise<AppUser[]> {
+  return fetchSpring<AppUser[]>(endpoints.users);
+}
+
+export async function createUser(payload: CreateUserPayload): Promise<AppUser> {
+  return fetchSpring<AppUser>(endpoints.users, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateUser(userId: string, payload: UpdateUserPayload): Promise<AppUser> {
+  return fetchSpring<AppUser>(endpoints.userById(userId), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateUserStatus(userId: string, status: "ACTIVE" | "DISABLED" | "LOCKED"): Promise<AppUser> {
+  return fetchSpring<AppUser>(endpoints.userStatus(userId), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function resetUserPassword(userId: string, newPassword: string): Promise<AppUser> {
+  return fetchSpring<AppUser>(endpoints.userResetPassword(userId), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ newPassword }),
+  });
+}
+
+export async function disableUser(userId: string): Promise<AppUser> {
+  return fetchSpring<AppUser>(endpoints.userById(userId), { method: "DELETE" });
+}
+
+export async function submitTestTransaction(payload: TestTransactionPayload): Promise<TestTransactionResult> {
+  return fetchSpring<TestTransactionResult>(endpoints.testTransactions, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}

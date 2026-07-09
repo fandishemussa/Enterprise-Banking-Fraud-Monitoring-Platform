@@ -1,0 +1,54 @@
+spring:
+  application:
+    name: banking-transaction-risk-fraud-monitoring
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5544}/${DB_NAME:fraud_monitoring_db}
+    username: ${DB_USER:postgres}
+    password: ${DB_PASSWORD:postgres}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  docker:
+    compose:
+      enabled: true
+      file: docker-compose.yml
+
+server:
+  port: ${SERVER_PORT:8081}
+
+ml:
+  service:
+    url: ${ML_SERVICE_URL:http://localhost:8000}
+    connect-timeout-ms: ${ML_SERVICE_CONNECT_TIMEOUT_MS:1000}
+    read-timeout-ms: ${ML_SERVICE_READ_TIMEOUT_MS:2000}
+
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+
+security:
+  # Secure by default. Set to false only for local testing without a login flow -
+  # restores the original fully-open behavior (see docs/architecture notes in SecurityConfig).
+  enabled: ${SECURITY_ENABLED:true}
+
+jwt:
+  # Local dev default only - override with a real random secret via JWT_SECRET in production.
+  secret: ${JWT_SECRET:local-dev-insecure-jwt-signing-secret-change-this-in-production-0123456789}
+  expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+
+admin:
+  default-username: ${DEFAULT_ADMIN_USERNAME:admin}
+  default-email: ${DEFAULT_ADMIN_EMAIL:admin@fraud.local}
+  default-password: ${DEFAULT_ADMIN_PASSWORD:Admin@12345}
+  default-full-name: ${DEFAULT_ADMIN_FULL_NAME:System Administrator}
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
