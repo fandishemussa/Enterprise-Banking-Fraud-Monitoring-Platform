@@ -1,84 +1,153 @@
 # Enterprise Banking Fraud Monitoring Platform
 
-An enterprise-style banking transaction risk and fraud monitoring platform. It simulates how banks and FinTech
-companies ingest transactions, run rule-based risk scoring in real time, generate fraud alerts, and route them
-through an analyst investigation workflow — with full audit logging at every step.
+An enterprise-grade banking transaction risk and fraud monitoring platform. It simulates how a bank
+or FinTech ingests transactions, scores them for fraud in real time (rules + ML), routes alerts
+through a full analyst investigation workflow, and gives compliance/ops teams the tooling — case
+management, SLA enforcement, customer locking, fraud-ring detection, analytics, notifications — to
+run that workflow at scale, with an immutable audit trail behind every state change.
 
-> **Status: v1.2.0 — backend + data engineering foundation + ML scoring + dashboard.** Kafka/Redpanda
-> streaming is planned for v1.3.0 (see [Roadmap](#roadmap)).
+> **Status: v2.1.0 — enterprise hardening + advanced fraud-ops feature set.** Auth/RBAC, streaming
+> ingestion, ML model monitoring, case management, SLA/escalation, customer locking, fraud-ring
+> detection, bulk operations, notifications, and analytics are all built and verified end-to-end.
+> See [Feature highlights](#feature-highlights) below and [Roadmap](#roadmap) for what's next.
+
+## Table of contents
+
+- [Architecture](#architecture)
+- [Feature highlights](#feature-highlights)
+- [Tech stack](#tech-stack)
+- [Rule-based + ML risk scoring](#rule-based--ml-risk-scoring)
+- [Authentication & roles](#authentication--roles)
+- [Getting started](#getting-started)
+- [API reference](#api-reference)
+- [Testing](#testing)
+- [Project structure](#project-structure)
+- [Documentation index](#documentation-index)
+- [Roadmap](#roadmap)
 
 ## Architecture
 
 ```
-Next.js Dashboard (frontend/, port 3000)
-        |
-        v
-Spring Boot Core Banking/Fraud API (port 8080/8081)
-        |
-        |------ PostgreSQL
-        |
-        |------ Kafka/Redpanda            (v1.3.0, not yet built)
-        |
-        v
-FastAPI ML Fraud Scoring Service (ml-service/, port 8000)
-        |
-        v
-scikit-learn Isolation Forest model
+                     Next.js Dashboard (frontend/, port 3000)
+                                   │
+                                   ▼
+        Spring Boot Core Banking/Fraud API (port 8080, Java 21 / Spring Boot 4.1)
+                                   │
+             ┌─────────────────────┼─────────────────────┐
+             ▼                     ▼                      ▼
+        PostgreSQL 16      Redpanda (Kafka API)     FastAPI ML Service (port 8000)
+        (Flyway-managed)   real-time ingestion             │
+                                                             ▼
+                                                  scikit-learn Isolation Forest
+                                                  + drift detection + retraining
 ```
 
-Every transaction is scored twice: Spring Boot's rule engine runs first, then it calls the FastAPI
-ML service for an Isolation Forest anomaly score, and combines them 70% rule / 30% ML into a single
-final score. If the ML service is unreachable, Spring Boot logs a warning, continues with the rule
-score alone (`scoringSource: RULE_ONLY`), and transaction creation still succeeds.
+Every transaction is scored twice: Spring Boot's rule engine runs first (7 pluggable rules,
+including cross-customer fraud-ring detection), then it calls the FastAPI ML service for an
+Isolation Forest anomaly score, and combines them 70% rule / 30% ML into a single final score. If
+the ML service is unreachable, a Resilience4j circuit breaker trips, Spring Boot logs a warning,
+continues with the rule score alone (`scoringSource: RULE_ONLY`), and transaction creation still
+succeeds — fraud scoring never blocks banking.
 
-### v1.0.0 backend modules
+Transactions can also flow in over Kafka-compatible Redpanda (`streaming/`) instead of the synchronous
+REST endpoint, going through the identical scoring pipeline via a shared service, with a dead-letter
+topic for anything that fails to process.
+
+### Backend modules
 
 | Module | Responsibility |
 |---|---|
-| `customer` | Customer profiles, risk level, risk-profile aggregation |
+| `customer` | Customer profiles, risk level, PII encryption at rest |
+| `customer/riskprofile` | Aggregated "Customer Risk 360" view (transactions, alerts, cases, trends) |
+| `customer/lock` | Fraud lock/unlock workflow with admin-approval for investigator-initiated locks |
+| `customer/network` | Fraud-ring detection: customers linked via shared device ID / IP address |
 | `account` | Bank accounts owned by customers |
 | `transaction` | Transaction ingestion; orchestrates scoring, alerting, and audit on create |
-| `risk` | Rule-based risk scoring engine (6 pluggable rules) |
-| `alert` | Fraud alert generation and analyst triage (status/assignment) |
-| `caseinvestigation` | Investigation case lifecycle, tied to a fraud alert |
-| `audit` | Immutable audit trail for every state-changing action |
-| `common` | Shared API envelope, exception handling, security config, ID sequences |
-| `ingestion` | CSV batch ingestion: raw/staging/clean/rejected layers, dead letter queue |
-| `quality` | Data quality checks (7 checks) run over `clean_transactions` |
-| `pipeline` | Generic pipeline run/task/error tracking shared by ingestion and data quality |
-| `user` | User accounts, roles, JWT auth, default admin seeding |
-| `security` | JWT issuing/parsing, request authentication filter |
-| `testtransaction` | Single-call test harness that submits a transaction and returns transaction + risk score + fraud alert |
+| `risk` | Rule-based risk scoring engine (7 pluggable rules) + hybrid ML integration |
+| `risk/rulesmanagement` | Admin-configurable fraud rule thresholds/scores with full version history |
+| `alert` | Fraud alert generation, assignment, bulk operations, escalation |
+| `alert/sla` | SLA policies, breach/near-breach tracking, escalation history |
+| `caseinvestigation` | Investigation case lifecycle, tied 1:1 to a fraud alert |
+| `caseinvestigation/timeline` | Case activity timeline, analyst notes, status history |
+| `notification` | On-the-fly notification feed (new alerts, escalations, pending lock requests) |
+| `analytics` | Platform-wide reporting aggregates (merchant category, country, time-of-day, case outcomes) |
+| `streaming` | Kafka/Redpanda producer/consumer for real-time transaction ingestion + dead letter queue |
+| `ingestion` | CSV batch ingestion: raw/staging/clean/rejected layers |
+| `quality` | Data quality checks run over `clean_transactions` |
+| `pipeline` | Generic pipeline run/task/error tracking shared by ingestion, quality, and streaming |
+| `audit` | Immutable, append-only audit trail for every state-changing action |
+| `user` | User accounts, roles, JWT auth (with token-version revocation), account lockout |
+| `security` | JWT issuing/parsing, request authentication filter, method-level RBAC guard |
+| `testtransaction` | Single-call test harness: submit a transaction, get back transaction + risk score + alert |
+| `common` | API envelope, exception handling, security/CORS config, ID sequences, PII crypto, idempotency |
 
-See [docs/data-engineering-pipeline.md](docs/data-engineering-pipeline.md) for the full ingestion/quality/pipeline
-design.
+## Feature highlights
+
+**Fraud rules management** — the 6 built-in scoring rules (amount, device, country, frequency,
+merchant, hour) plus a 7th cross-customer fraud-ring rule are all database-configurable: an admin
+edits thresholds/scores from the Risk Rules page, every change is versioned with a full diff history,
+and admins can also add brand-new amount-threshold rules that take effect immediately.
+
+**Case investigation workflow** — every alert that moves to "Investigating" automatically gets an
+investigation case (no manual step), pre-assigned to whoever the alert is assigned to. Cases carry a
+full activity timeline, analyst notes, status history, and a decision panel (false positive / confirmed
+fraud / needs more review). Reassigning or escalating the alert keeps the case's assignee in sync.
+
+**Assignment-based visibility** — `ANALYST`/`INVESTIGATOR`/`TESTER` only see the alerts and cases
+assigned to them (their working queue); `ADMIN` and `VIEWER` always see everything, for oversight.
+
+**Customer Risk 360** — a single page aggregating a customer's full transaction/alert/case history,
+risk and volume trend charts, device/country behavior, and now their fraud-ring linkages.
+
+**Customer fraud lock** — `ADMIN` locks a customer immediately, blocking new transactions; `INVESTIGATOR`
+can only submit a lock *request*, which stays pending until an admin approves or rejects it. A full
+approval-queue page lets admins review and act on pending requests.
+
+**Fraud-ring / network detection** — a dedicated rule flags a transaction the moment its device ID or
+IP address is shared with a *different* customer, and the Customer Risk 360 page surfaces exactly who
+else is linked and how.
+
+**SLA monitoring & escalation** — configurable per-priority SLA policies, automatic breach/near-breach
+tracking, and a full escalation trail (who escalated to whom, and why).
+
+**Bulk operations** — multi-select rows in the Alerts/Cases tables to bulk-assign, bulk-escalate, or
+bulk-update status in one action, with partial-success reporting (one bad ID doesn't abort the batch).
+
+**Real-time notifications** — an in-app notification center polls for new alerts, escalations directed
+at the current user, and (for admins) pending lock requests — scoped by the same visibility rules as
+the rest of the platform.
+
+**Reporting & analytics** — CSV export on every major table, plus a dedicated Analytics page (admin/
+viewer) with fraud-trend charts: alerts by merchant category, by country, by hour of day, and case
+resolution/decision breakdowns.
+
+**Model monitoring & drift detection** — the ML service logs every prediction, tracks fallback rate and
+score distribution, and detects feature drift by comparing live traffic against the training baseline
+— all visible on the Model Monitoring dashboard, alongside retraining history.
+
+**Streaming ingestion** — transactions can flow in over Kafka-compatible Redpanda instead of REST, through
+the same scoring pipeline, with per-event status tracking and a dead-letter topic for failures.
+
+**Security hardening** — JWT auth with per-user token-version revocation (instant logout-everywhere),
+account lockout after repeated failed logins, PII field-level encryption at rest, ML-service API-key
+auth, Resilience4j circuit breaker around the ML call, idempotency keys on transaction creation,
+structured JSON logging with correlation IDs, Prometheus metrics, and a CI/CD pipeline with dependency
+vulnerability scanning.
 
 ## Tech stack
 
-- Java 21, Spring Boot 4.1.0 (Spring Web MVC, Spring Data JPA, Spring Security, Bean Validation)
-- PostgreSQL 16
-- Lombok, springdoc-openapi (Swagger UI)
-- Maven, Docker Compose
+| Layer | Stack |
+|---|---|
+| Backend | Java 21, Spring Boot 4.1 (Web MVC, Data JPA, Security, Validation, Kafka), Flyway, PostgreSQL 16 |
+| ML service | Python, FastAPI, scikit-learn (Isolation Forest), pandas |
+| Frontend | Next.js (App Router), TypeScript, Tailwind, TanStack Table, Recharts |
+| Streaming | Redpanda (Kafka API-compatible) |
+| Infra | Docker Compose, GitHub Actions CI/CD, Trivy dependency scanning |
 
-## Domain model
+## Rule-based + ML risk scoring
 
-All entities use human-readable public IDs generated from a DB-backed sequence (`common.IdSequenceService`), so
-IDs stay unique across restarts: `CUS-1001`, `ACC-1001`, `TXN-1001`, `ALERT-1001`, `CASE-1001`.
-
-```
-customers ──< accounts ──< banking_transactions ──1:1── risk_scores
-    │                              │                         │
-    │                              └──1:1── fraud_alerts ─────┘
-    │                                            │
-    └────────────────────────────────< ─────────┘
-                                            investigation_cases (1:1 with fraud_alerts)
-                                            audit_logs (append-only, references any entity)
-```
-
-### Rule-based risk scoring
-
-Every transaction is scored by six independent rules (`risk/rules/`), each contributing points; the sum is capped
-at 100 and mapped to a risk level:
+Every transaction is scored by independent rules (`risk/rules/`), each contributing points; the sum is
+capped at 100 and mapped to a risk level:
 
 | Score | Level |
 |---|---|
@@ -87,51 +156,51 @@ at 100 and mapped to a risk level:
 | 61–80 | HIGH |
 | 81–100 | CRITICAL |
 
-| Rule | Trigger | Points |
-|---|---|---|
-| `LargeAmountRule` | amount > 5,000 / > 10,000 | +30 / +50 |
-| `NewDeviceRule` | first transaction from this device for the customer | +20 |
-| `NewCountryRule` | first transaction from this country for the customer | +25 |
-| `HighFrequencyTransactionRule` | > 5 transactions by the customer in the last 10 minutes | +35 |
-| `HighRiskMerchantRule` | merchant category is CRYPTO / GAMBLING / HIGH_RISK_TRANSFER | +25 |
-| `UnusualHourRule` | transaction between 00:00–05:00 | +15 |
+| Rule | Trigger | Points | Configurable? |
+|---|---|---|---|
+| `LargeAmountRule` | amount > threshold / > secondary threshold | +30 / +50 | Yes (Risk Rules page) |
+| `NewDeviceRule` | first transaction from this device for the customer | +20 | Yes |
+| `NewCountryRule` | first transaction from this country for the customer | +25 | Yes |
+| `HighFrequencyTransactionRule` | > N transactions by the customer in the last 10 minutes | +35 | Yes |
+| `HighRiskMerchantRule` | merchant category is CRYPTO / GAMBLING / HIGH_RISK_TRANSFER | +25 | Yes |
+| `UnusualHourRule` | transaction between configurable overnight hours | +15 | Yes |
+| `SharedDeviceOrIpRule` | device ID or IP address already used by a **different** customer (fraud ring signal) | +30 | Yes |
+| `CustomAmountThresholdRule` | any admin-created custom amount-threshold rule | admin-defined | Admin can add new rules |
 
 A `RiskScore` row records the rule score, the ML score (nullable if the ML service was unreachable),
 the combined final score, `scoringSource` (`HYBRID` or `RULE_ONLY`), the triggered rules, and both a
 rule-based and an ML-based plain-English explanation. Transactions scored HIGH or CRITICAL
-automatically generate a `FraudAlert`.
+automatically generate a `FraudAlert`, which — once assigned and moved to Investigating — automatically
+gets a linked `InvestigationCase`.
 
-### Hybrid ML scoring
-
-`RiskScoringService` calls `POST {ML_SERVICE_URL}/api/v1/score` (see [ml-service/](ml-service/)) via
-a `RestClient` with a 1s connect / 2s read timeout. On success, `finalScore = 0.7 * ruleScore + 0.3
-* mlScore` and `scoringSource = HYBRID`. On any failure (timeout, connection refused, malformed
-response), the exception is caught, logged as a warning, and scoring falls back to
-`finalScore = ruleScore` with `scoringSource = RULE_ONLY` — transaction creation never fails because
-of the ML service. Every call is audited (`ML_SCORE_REQUESTED`, `ML_SCORE_COMPLETED` or
-`ML_SCORE_FAILED`).
+`RiskScoringService` calls `POST {ML_SERVICE_URL}/api/v1/score` behind a Resilience4j circuit breaker
+with a 1s connect / 2s read timeout. On success, `finalScore = 0.7 * ruleScore + 0.3 * mlScore`. On any
+failure (timeout, connection refused, circuit open), scoring falls back to `finalScore = ruleScore`
+with `scoringSource = RULE_ONLY` — transaction creation never fails because of the ML service. Every
+call is audited (`ML_SCORE_REQUESTED`, `ML_SCORE_COMPLETED`, or `ML_SCORE_FAILED`).
 
 ## Authentication & roles
 
-The API is secured by default (`SECURITY_ENABLED=true`, override to `false` for local testing without a login flow).
-Every endpoint except `POST /api/v1/auth/login` requires `Authorization: Bearer <token>`. A default `ADMIN` user is
-auto-created on first startup (`admin` / `Admin@12345` by default - override via `DEFAULT_ADMIN_*` env vars); see
-[QUICKSTART.md](QUICKSTART.md) for the login walkthrough.
+The API is secured by default (`SECURITY_ENABLED=true`, override to `false` for local testing without
+a login flow). Every endpoint except `POST /api/v1/auth/login` requires `Authorization: Bearer <token>`.
+A default `ADMIN` user is auto-created on first startup (`admin` / `Admin@12345` by default — override
+via `DEFAULT_ADMIN_*` env vars); see [QUICKSTART.md](QUICKSTART.md) for the login walkthrough.
 
 | Role | Can do |
 |---|---|
-| `ADMIN` | Everything, including user management. Sees every alert/case, not just their own. |
+| `ADMIN` | Everything — user management, fraud rule authoring, SLA policy management, customer lock/unlock, lock-request approval. Sees every alert/case. |
 | `ANALYST` | Create transactions/test transactions, manage alerts and cases assigned to them |
-| `INVESTIGATOR` | Manage alerts and cases assigned to them, read-only elsewhere |
+| `INVESTIGATOR` | Manage alerts and cases assigned to them; can request (not directly apply) a customer lock, pending admin approval |
 | `TESTER` | Submit test transactions; only sees alerts/cases assigned to them |
-| `VIEWER` | Read-only everywhere - sees every alert/case (for oversight), can't change anything |
+| `VIEWER` | Read-only everywhere — sees every alert/case and the Analytics dashboard, can't change anything |
 
 **Assignment-based visibility**: `GET /api/v1/alerts` and `GET /api/v1/cases` are scoped per role
-(`FraudAlertService#getAlertsVisibleTo`, `InvestigationCaseService#getCasesVisibleTo`) - `ANALYST`,
-`INVESTIGATOR`, and `TESTER` only see alerts/cases where `assignedTo` matches their own username (their
-working queue); `ADMIN` and `VIEWER` always see everything. Escalating or assigning an alert works
-between any of `ADMIN`/`ANALYST`/`INVESTIGATOR` (see the assignee dropdown on the Fraud Alerts page,
-backed by `GET /api/v1/directory/assignable-users`).
+(`FraudAlertService#getAlertsVisibleTo`, `InvestigationCaseService#getCasesVisibleTo`) — `ANALYST`,
+`INVESTIGATOR`, and `TESTER` only see alerts/cases where `assignedTo` matches their own username;
+`ADMIN` and `VIEWER` always see everything. Reassigning or escalating an alert keeps its linked case's
+assignee in sync automatically. Escalating or assigning works between any of `ADMIN`/`ANALYST`/
+`INVESTIGATOR` (see the assignee dropdown on the Fraud Alerts page, backed by
+`GET /api/v1/directory/assignable-users`).
 
 Unauthenticated requests get `401`; authenticated requests with an insufficient role get `403`.
 
@@ -148,18 +217,27 @@ in `prod`, and per-username idempotent so it never touches an already-existing a
 | `tester1` | `TESTER` | `Demo@12345` |
 
 `DataSeeder` also assigns a couple of the seeded alerts to `analyst1`/`analyst2`/`investigator1` so the
-assignment-based visibility rule above has real data to show immediately - log in as `analyst1` and the
-Fraud Alerts / Investigation Cases pages should show just their queue, while `admin` or `viewer1` see
-everything.
+assignment-based visibility rule above has real data to show immediately — log in as `analyst1` and the
+Fraud Alerts / Investigation Cases pages show just their queue, while `admin` or `viewer1` see everything.
 
 ## Getting started
 
-See [QUICKSTART.md](QUICKSTART.md) for the fastest path to a running instance and a full end-to-end curl walkthrough.
+```bash
+docker compose up -d --build
+```
+
+This starts PostgreSQL, Redpanda, the Spring Boot API (8080), the FastAPI ML service (8000), and the
+Next.js dashboard (3000). Flyway runs all migrations automatically on backend startup. See
+[QUICKSTART.md](QUICKSTART.md) for the fastest path to a running instance, a full end-to-end curl
+walkthrough, and how to run each service locally without Docker.
 
 ## API reference
 
-Interactive Swagger UI is available at `http://localhost:8081/swagger-ui.html` once the app is running (default
-port; see [QUICKSTART.md](QUICKSTART.md) if 8080/5432 are already taken on your machine).
+Interactive Swagger UI is available at `http://localhost:8080/swagger-ui.html` once the app is running
+(disabled in the `prod` profile).
+
+<details>
+<summary><strong>Customers, accounts, transactions, risk scores</strong></summary>
 
 | Method | Path | Description |
 |---|---|---|
@@ -167,77 +245,220 @@ port; see [QUICKSTART.md](QUICKSTART.md) if 8080/5432 are already taken on your 
 | GET | `/api/v1/customers` | List customers |
 | GET | `/api/v1/customers/{customerId}` | Get a customer |
 | PUT | `/api/v1/customers/{customerId}` | Update a customer |
-| GET | `/api/v1/customers/{customerId}/risk-profile` | Aggregated risk profile (transactions, open alerts, confirmed fraud cases) |
+| GET | `/api/v1/customers/{customerId}/risk-profile` | Aggregated Customer Risk 360 view |
+| GET | `/api/v1/customers/{customerId}/linked-customers` | Fraud-ring linkage: customers sharing a device/IP |
+| GET | `/api/v1/customers/{customerId}/accounts` | List a customer's accounts |
+| GET | `/api/v1/customers/{customerId}/transactions` | List a customer's transactions |
+| GET | `/api/v1/customers/{customerId}/alerts` | List a customer's alerts |
 | POST | `/api/v1/accounts` | Open an account for a customer |
 | GET | `/api/v1/accounts` | List accounts |
 | GET | `/api/v1/accounts/{accountId}` | Get an account |
-| GET | `/api/v1/customers/{customerId}/accounts` | List a customer's accounts |
+| GET | `/api/v1/accounts/{accountId}/transactions` | List an account's transactions |
 | POST | `/api/v1/transactions` | Create a transaction (triggers scoring + alerting + audit) |
 | GET | `/api/v1/transactions` | List transactions |
 | GET | `/api/v1/transactions/{transactionId}` | Get a transaction |
-| GET | `/api/v1/customers/{customerId}/transactions` | List a customer's transactions |
-| GET | `/api/v1/accounts/{accountId}/transactions` | List an account's transactions |
 | GET | `/api/v1/risk-scores` | List all risk scores |
 | GET | `/api/v1/transactions/{transactionId}/risk-score` | Get the risk score for a transaction |
-| GET | `/api/v1/alerts` | List fraud alerts |
+
+</details>
+
+<details>
+<summary><strong>Customer fraud lock</strong></summary>
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/v1/customers/{customerId}/lock` | Lock a customer (ADMIN: immediate; INVESTIGATOR: pending approval) |
+| POST | `/api/v1/customers/{customerId}/unlock` | Unlock a customer (ADMIN only) |
+| GET | `/api/v1/customers/{customerId}/lock-requests` | Lock request history for a customer |
+| GET | `/api/v1/customers/lock-requests/pending` | Global pending lock-request queue |
+| PATCH | `/api/v1/customers/lock-requests/{lockRequestId}/approve` | Approve a pending lock request (ADMIN only) |
+| PATCH | `/api/v1/customers/lock-requests/{lockRequestId}/reject` | Reject a pending lock request (ADMIN only) |
+
+</details>
+
+<details>
+<summary><strong>Fraud rules management</strong></summary>
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/v1/fraud-rules` | List all fraud rules |
+| GET | `/api/v1/fraud-rules/{ruleId}` | Get a fraud rule |
+| POST | `/api/v1/fraud-rules` | Create a new custom fraud rule (ADMIN only) |
+| PUT | `/api/v1/fraud-rules/{ruleId}` | Update a fraud rule's thresholds/score/severity (ADMIN only) |
+| PATCH | `/api/v1/fraud-rules/{ruleId}/enable` | Enable a fraud rule (ADMIN only) |
+| PATCH | `/api/v1/fraud-rules/{ruleId}/disable` | Disable a fraud rule (ADMIN only) |
+| GET | `/api/v1/fraud-rules/{ruleId}/versions` | Full version history for a rule |
+
+</details>
+
+<details>
+<summary><strong>Fraud alerts (including bulk operations)</strong></summary>
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/v1/alerts` | List fraud alerts (assignment-scoped) |
 | GET | `/api/v1/alerts/{alertId}` | Get a fraud alert |
-| PATCH | `/api/v1/alerts/{alertId}/status` | Update alert status |
-| PATCH | `/api/v1/alerts/{alertId}/assign` | Assign an alert to an analyst |
-| GET | `/api/v1/customers/{customerId}/alerts` | List a customer's alerts |
+| PATCH | `/api/v1/alerts/{alertId}/status` | Update alert status (auto-creates a case on → INVESTIGATING) |
+| PATCH | `/api/v1/alerts/{alertId}/assign` | Assign an alert (keeps its linked case's assignee in sync) |
+| POST | `/api/v1/alerts/{alertId}/escalate` | Escalate an alert to another user |
+| PATCH | `/api/v1/alerts/bulk-status` | Bulk status update across multiple alerts |
+| PATCH | `/api/v1/alerts/bulk-assign` | Bulk assign multiple alerts |
+| POST | `/api/v1/alerts/bulk-escalate` | Bulk escalate multiple alerts |
+| GET | `/api/v1/alerts/{alertId}/status-history` | Status change history |
+| GET | `/api/v1/alerts/{alertId}/escalations` | Escalation history |
+| GET | `/api/v1/directory/assignable-users` | Users eligible for assignment/escalation |
+
+</details>
+
+<details>
+<summary><strong>Investigation cases</strong></summary>
+
+| Method | Path | Description |
+|---|---|---|
 | POST | `/api/v1/cases` | Open an investigation case from an alert |
-| GET | `/api/v1/cases` | List investigation cases |
+| GET | `/api/v1/cases` | List investigation cases (assignment-scoped) |
 | GET | `/api/v1/cases/{caseId}` | Get an investigation case |
 | PATCH | `/api/v1/cases/{caseId}` | Update case status/assignment/notes |
 | PATCH | `/api/v1/cases/{caseId}/decision` | Record the analyst's decision |
-| GET | `/api/v1/audit-logs` | List audit log entries |
+| PATCH | `/api/v1/cases/bulk-update` | Bulk update status/assignment across multiple cases |
+| GET | `/api/v1/cases/{caseId}/timeline` | Case activity timeline |
+| GET/POST/PUT/DELETE | `/api/v1/cases/{caseId}/notes` | Analyst notes on a case |
+| GET | `/api/v1/cases/{caseId}/status-history` | Case status change history |
+
+</details>
+
+<details>
+<summary><strong>SLA monitoring & escalation</strong></summary>
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/v1/sla/summary` | SLA compliance summary |
+| GET | `/api/v1/sla/alerts` | All alerts with SLA status |
+| GET | `/api/v1/sla/breached` | Breached alerts |
+| GET | `/api/v1/sla/near-breach` | Alerts approaching breach |
+| GET | `/api/v1/sla/policies` | List SLA policies |
+| PUT | `/api/v1/sla/policies/{policyId}` | Update an SLA policy (ADMIN only) |
+
+</details>
+
+<details>
+<summary><strong>Notifications & analytics</strong></summary>
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/api/v1/notifications` | New alerts/escalations/pending-lock-requests for the current user |
+| GET | `/api/v1/analytics/summary` | Platform-wide fraud trend aggregates (ADMIN/VIEWER only) |
+
+</details>
+
+<details>
+<summary><strong>Streaming, data engineering & audit</strong></summary>
+
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/v1/streaming/transactions/publish` | Publish a transaction onto the Kafka/Redpanda topic |
+| GET | `/api/v1/streaming/events` | Recent streaming event log |
+| GET | `/api/v1/streaming/metrics` | Streaming throughput/error metrics |
+| GET/POST/PATCH | `/api/v1/streaming/dead-letter-events` | Dead-lettered streaming events (retry/ignore) |
 | POST | `/api/v1/ingestion/upload` | Upload a CSV file for batch ingestion |
 | GET | `/api/v1/ingestion/runs` | List recent ingestion runs |
 | GET | `/api/v1/ingestion/rejected-records` | List recently rejected rows with reasons |
-| GET | `/api/v1/dead-letter/transactions` | List dead-lettered (unparseable) rows |
-| POST | `/api/v1/dead-letter/transactions/{id}/retry` | Re-attempt parsing a dead-lettered row |
-| PATCH | `/api/v1/dead-letter/transactions/{id}/ignore` | Mark a dead-lettered row as ignored |
+| GET/POST/PATCH | `/api/v1/dead-letter/transactions` | Dead-lettered (unparseable) CSV rows (retry/ignore) |
 | POST | `/api/v1/data-quality/run` | Manually trigger a data quality audit |
-| GET | `/api/v1/data-quality/runs` | List recent data quality runs |
-| GET | `/api/v1/data-quality/results` | List recent per-check results |
-| GET | `/api/v1/data-quality/issues` | List recent individual data quality issues |
-| GET | `/api/v1/pipelines/runs` | List recent pipeline runs (ingestion + quality) |
-| GET | `/api/v1/pipelines/runs/{runId}` | Get one pipeline run with its task breakdown |
-| GET | `/api/v1/pipelines/metrics` | Success rate, average duration, last success/failure |
-| GET | `/api/v1/pipelines/errors` | List recent pipeline errors |
+| GET | `/api/v1/data-quality/runs`, `/results`, `/issues` | Data quality run history |
+| GET | `/api/v1/pipelines/runs`, `/metrics`, `/errors` | Generic pipeline observability (ingestion + quality + streaming) |
+| GET | `/api/v1/audit-logs` | Immutable audit trail |
+
+</details>
+
+<details>
+<summary><strong>Auth & users</strong></summary>
+
+| Method | Path | Description |
+|---|---|---|
 | POST | `/api/v1/auth/login` | Log in, returns a JWT + user profile |
+| POST | `/api/v1/auth/logout` | Revoke the current token (bumps token-version) |
 | GET | `/api/v1/auth/me` | Get the current authenticated user |
 | PATCH | `/api/v1/auth/change-password` | Change your own password |
-| POST | `/api/v1/users` | Create a user (ADMIN only) |
-| GET | `/api/v1/users` | List users (ADMIN only) |
-| GET | `/api/v1/users/{userId}` | Get a user (ADMIN only) |
-| PUT | `/api/v1/users/{userId}` | Update a user (ADMIN only) |
+| POST/GET/PUT/DELETE | `/api/v1/users` | Full user management (ADMIN only) |
 | PATCH | `/api/v1/users/{userId}/status` | Activate/disable/lock a user (ADMIN only) |
 | PATCH | `/api/v1/users/{userId}/reset-password` | Reset a user's password (ADMIN only) |
-| DELETE | `/api/v1/users/{userId}` | Soft-disable a user (ADMIN only) |
-| POST | `/api/v1/test-transactions` | Submit a transaction and get back transaction + risk score + fraud alert in one call (ADMIN/ANALYST/TESTER) |
+| POST | `/api/v1/test-transactions` | Submit a transaction and get back transaction + risk score + alert in one call |
 
-## Roadmap
+</details>
 
-- **v1.1.0 (done)** — Data engineering foundation: CSV batch ingestion, raw/staging/clean layers, data quality checks, dead letter queue, pipeline observability.
-- **v1.2.0 (done)** — ML fraud scoring: FastAPI + Isolation Forest service ([ml-service/](ml-service/)), hybrid rule/ML score, and the Next.js dashboard ([frontend/](frontend/)).
-- **v1.3.0** — Streaming: Kafka/Redpanda producer/consumer, real-time scoring.
-- **v2.0.0** — Enterprise hardening: JWT auth, RBAC, SCD Type 2 customer risk history, CI/CD.
+<details>
+<summary><strong>ML service (FastAPI, port 8000)</strong></summary>
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/health` | Health check |
+| GET | `/api/v1/model-info` | Current model version, metadata, feature baselines |
+| POST | `/api/v1/score` | Score a single transaction |
+| POST | `/api/v1/batch-score` | Score a batch of transactions |
+| POST | `/api/v1/retrain` | Trigger model retraining |
+| GET | `/api/v1/monitoring/summary` | Prediction volume, fallback rate, risk distribution |
+| GET | `/api/v1/monitoring/predictions` | Recent prediction log |
+| GET | `/api/v1/monitoring/score-distribution` | Score histogram |
+| GET | `/api/v1/monitoring/drift` | Per-feature drift vs. training baseline |
+| GET | `/api/v1/monitoring/retraining-history` | Retraining run history |
+
+</details>
+
+## Testing
+
+```bash
+./mvnw test                          # backend (JUnit + Mockito, 40+ tests)
+cd ml-service && pytest              # ML service
+cd frontend && npm run build         # frontend type-check + build
+```
+
+CI runs all three on every push (see [Roadmap](#roadmap) / `.github/workflows/`), plus a dependency
+vulnerability scan.
 
 ## Project structure
 
 ```
-enterprise-banking-fraud-monitoring-platform/
+banking-transaction-risk-fraud-monitoring/
 ├── src/main/java/.../bankingtransactionriskfraudmonitoring/
-│   ├── customer/            # Customer entity, DTOs, service, controller
-│   ├── account/              # Account entity, DTOs, service, controller
-│   ├── transaction/           # BankingTransaction; orchestrates risk + alert + audit
-│   ├── risk/                  # RiskScore + rules/ (pluggable RiskRule beans)
-│   ├── alert/                 # FraudAlert entity, DTOs, service, controller
-│   ├── caseinvestigation/     # InvestigationCase entity, DTOs, service, controller
-│   ├── audit/                 # AuditLog entity, service, controller
-│   └── common/                # ApiResponse, ErrorResponse, GlobalExceptionHandler,
-│                               # exceptions, IdSequenceService, SecurityConfig, OpenApiConfig, DataSeeder
-├── docker-compose.yml         # PostgreSQL 16
+│   ├── customer/            # Customer, risk profile, lock workflow, network/fraud-ring detection
+│   ├── account/               # Account entity, DTOs, service, controller
+│   ├── transaction/            # BankingTransaction; orchestrates risk + alert + audit
+│   ├── risk/                   # RiskScore + rules/ (pluggable RiskRule beans) + rulesmanagement/
+│   ├── alert/                  # FraudAlert + sla/ (SLA policies, escalation)
+│   ├── caseinvestigation/      # InvestigationCase + timeline/ (notes, activity, status history)
+│   ├── notification/           # On-the-fly notification feed
+│   ├── analytics/              # Platform-wide reporting aggregates
+│   ├── streaming/               # Kafka/Redpanda producer/consumer + dead letter queue
+│   ├── ingestion/                # CSV batch ingestion pipeline
+│   ├── quality/                  # Data quality checks
+│   ├── pipeline/                  # Generic pipeline run/task/error tracking
+│   ├── audit/                      # AuditLog entity, service, controller
+│   ├── user/                        # Users, roles, JWT auth, account lockout
+│   ├── security/                     # JWT filter, method-level RBAC guard
+│   └── common/                        # API envelope, exceptions, security/CORS config, PII crypto
+├── src/main/resources/db/migration/  # Flyway migrations (V1-V8+)
+├── ml-service/                       # FastAPI + scikit-learn fraud scoring service
+├── frontend/                         # Next.js dashboard
+├── docker-compose.yml                 # Postgres, Redpanda, backend, ml-service, frontend
 ├── .env.example
-└── QUICKSTART.md
+├── QUICKSTART.md
+└── docs/                              # Architecture, operations, data-engineering deep-dives
 ```
+
+## Documentation index
+
+- [QUICKSTART.md](QUICKSTART.md) — fastest path to a running instance + curl walkthrough
+- [docs/operations.md](docs/operations.md) — secrets management, backup/DR, schema management, scaling
+- [docs/data-engineering-pipeline.md](docs/data-engineering-pipeline.md) — ingestion/quality/pipeline design
+- [frontend/README.md](frontend/README.md) — dashboard setup and structure
+- [ml-service/README.md](ml-service/README.md) — ML service setup, training, and API details
+
+## Roadmap
+
+- **v1.1.0 (done)** — Data engineering foundation: CSV batch ingestion, data quality checks, dead letter queue, pipeline observability.
+- **v1.2.0 (done)** — ML fraud scoring: FastAPI + Isolation Forest service, hybrid rule/ML score, Next.js dashboard.
+- **v1.3.0 (done)** — Streaming: Kafka/Redpanda producer/consumer, real-time ingestion.
+- **v2.0.0 (done)** — Enterprise hardening: JWT auth, RBAC, PII encryption, Flyway-managed schema, CI/CD, dependency scanning.
+- **v2.1.0 (done)** — Advanced fraud ops: fraud rules management, case timeline/notes, Customer Risk 360, SLA/escalation, model monitoring/drift, customer locking, assignment-based visibility, bulk operations, notifications, analytics, fraud-ring detection.
+- **Next** — Multi-factor authentication, webhook integrations for external case-management systems, SCD Type 2 customer risk history.

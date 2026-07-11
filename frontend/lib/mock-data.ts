@@ -1,6 +1,7 @@
 import type {
   Account,
   AlertEscalation,
+  AnalyticsSummary,
   AlertSlaPolicy,
   AlertSlaResult,
   AlertStatusHistory,
@@ -476,6 +477,16 @@ export const mockSlaSummary: SlaSummary = {
   slaComplianceRatePercent: 50,
   averageResponseTimeMinutes: 42,
   averageResolutionTimeMinutes: 620,
+};
+
+export const mockAnalyticsSummary: AnalyticsSummary = {
+  totalAlerts: 5,
+  totalCases: 4,
+  alertsByMerchantCategory: { CRYPTO: 2, GAMBLING: 1, HIGH_RISK_TRANSFER: 1, GROCERY: 1 },
+  alertsByCountry: { Nigeria: 2, Russia: 1, Ukraine: 1, "United States": 1 },
+  alertsByHourOfDay: { "9": 1, "14": 2, "20": 1, "23": 1 },
+  casesByStatus: { OPEN: 2, IN_REVIEW: 1, RESOLVED: 1 },
+  casesByDecision: { PENDING: 3, CONFIRMED_FRAUD: 1 },
 };
 
 export const mockStreamingMetric: StreamingMetric = {

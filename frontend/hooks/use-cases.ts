@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { createCase, getCases, updateCase } from "@/lib/api";
+import { bulkUpdateCases, createCase, getCases, updateCase } from "@/lib/api";
 import { useApiResource } from "@/hooks/use-api-resource";
 
 export function useCases() {
@@ -30,5 +30,16 @@ export function useCases() {
     }
   }
 
-  return { ...resource, mutating, create, update };
+  async function bulkUpdate(caseIds: string[], payload: { status?: string; assignedTo?: string }) {
+    setMutating(true);
+    try {
+      const result = await bulkUpdateCases(caseIds, payload);
+      resource.refetch();
+      return result;
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  return { ...resource, mutating, create, update, bulkUpdate };
 }

@@ -467,6 +467,39 @@ export interface CustomerRiskProfile {
   alertTrend: CustomerTransactionTrendPoint[];
 }
 
+export interface BulkOperationResponse {
+  succeededIds: string[];
+  failures: { id: string; reason: string }[];
+}
+
+export interface LinkedCustomer {
+  customerId: string;
+  fullName: string;
+  sharedDeviceIds: string[];
+  sharedIpAddresses: string[];
+}
+
+export interface AnalyticsSummary {
+  totalAlerts: number;
+  totalCases: number;
+  alertsByMerchantCategory: Record<string, number>;
+  alertsByCountry: Record<string, number>;
+  alertsByHourOfDay: Record<string, number>;
+  casesByStatus: Record<string, number>;
+  casesByDecision: Record<string, number>;
+}
+
+export type NotificationType = "NEW_ALERT" | "ALERT_ESCALATED" | "LOCK_REQUEST_PENDING";
+
+export interface NotificationItem {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  referenceId: string;
+  createdAt: string;
+}
+
 export type CustomerLockRequestStatus = "PENDING" | "APPROVED" | "REJECTED";
 
 export interface CustomerLockRequest {

@@ -35,6 +35,9 @@ public class FraudRuleSeeder implements CommandLineRunner {
                 "MERCHANT", "CRYPTO,GAMBLING,HIGH_RISK_TRANSFER", null, 25, null, RiskLevel.HIGH, FraudRuleType.MERCHANT);
         seedIfMissing("UNUSUAL_HOUR_RULE", "Unusual Hour", "Flags transactions occurring during unusual overnight hours",
                 "TIME", "0", "5", 15, null, RiskLevel.MEDIUM, FraudRuleType.TIME);
+        seedIfMissing("SHARED_DEVICE_IP_RULE", "Shared Device/IP",
+                "Flags transactions whose device ID or IP address was already used by a different customer - a fraud ring signal",
+                "DEVICE", null, null, 30, null, RiskLevel.HIGH, FraudRuleType.DEVICE);
     }
 
     private void seedIfMissing(String ruleCode, String name, String description, String category,

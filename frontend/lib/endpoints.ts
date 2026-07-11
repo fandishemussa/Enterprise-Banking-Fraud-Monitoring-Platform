@@ -10,6 +10,7 @@ export const endpoints = {
   customerLock: (customerId: string) => `${API_BASE_URL}/api/v1/customers/${customerId}/lock`,
   customerUnlock: (customerId: string) => `${API_BASE_URL}/api/v1/customers/${customerId}/unlock`,
   customerLockRequests: (customerId: string) => `${API_BASE_URL}/api/v1/customers/${customerId}/lock-requests`,
+  linkedCustomers: (customerId: string) => `${API_BASE_URL}/api/v1/customers/${customerId}/linked-customers`,
   lockRequestApprove: (lockRequestId: string) => `${API_BASE_URL}/api/v1/customers/lock-requests/${lockRequestId}/approve`,
   lockRequestReject: (lockRequestId: string) => `${API_BASE_URL}/api/v1/customers/lock-requests/${lockRequestId}/reject`,
   pendingLockRequests: `${API_BASE_URL}/api/v1/customers/lock-requests/pending`,
@@ -72,6 +73,13 @@ export const endpoints = {
   slaPolicies: `${API_BASE_URL}/api/v1/sla/policies`,
   slaPolicyById: (policyId: string) => `${API_BASE_URL}/api/v1/sla/policies/${policyId}`,
   alertEscalate: (alertId: string) => `${API_BASE_URL}/api/v1/alerts/${alertId}/escalate`,
+  alertBulkAssign: `${API_BASE_URL}/api/v1/alerts/bulk-assign`,
+  alertBulkEscalate: `${API_BASE_URL}/api/v1/alerts/bulk-escalate`,
+  alertBulkStatus: `${API_BASE_URL}/api/v1/alerts/bulk-status`,
+  caseBulkUpdate: `${API_BASE_URL}/api/v1/cases/bulk-update`,
+  notifications: (since?: string) =>
+    `${API_BASE_URL}/api/v1/notifications${since ? `?since=${encodeURIComponent(since)}` : ""}`,
+  analyticsSummary: `${API_BASE_URL}/api/v1/analytics/summary`,
   alertStatusHistory: (alertId: string) => `${API_BASE_URL}/api/v1/alerts/${alertId}/status-history`,
   alertEscalations: (alertId: string) => `${API_BASE_URL}/api/v1/alerts/${alertId}/escalations`,
 

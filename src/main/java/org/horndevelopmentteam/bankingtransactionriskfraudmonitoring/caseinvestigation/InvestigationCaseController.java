@@ -3,6 +3,7 @@ package org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.caseinvest
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.common.ApiResponse;
+import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.common.BulkOperationResponse;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
@@ -48,6 +49,18 @@ public class InvestigationCaseController {
                                                  Authentication authentication) {
         return ApiResponse.success("Case updated",
                 investigationCaseService.updateCase(caseId, request, authentication.getName(), roleOf(authentication)));
+    }
+
+    @PatchMapping("/bulk-update")
+    @PreAuthorize("@access.allow('ADMIN', 'ANALYST', 'INVESTIGATOR')")
+    public ApiResponse<BulkOperationResponse> bulkUpdate(@Valid @RequestBody BulkUpdateCasesRequest request,
+                                                          Authentication authentication) {
+        UpdateCaseRequest updateRequest = new UpdateCaseRequest(request.status(), request.assignedTo(), null);
+        BulkOperationResponse result = BulkOperationResponse.forEach(
+                request.caseIds(),
+                caseId -> investigationCaseService.updateCase(
+                        caseId, updateRequest, authentication.getName(), roleOf(authentication)));
+        return ApiResponse.success(result.failures().isEmpty() ? "All cases updated" : "Some cases could not be updated", result);
     }
 
     @PatchMapping("/{caseId}/decision")

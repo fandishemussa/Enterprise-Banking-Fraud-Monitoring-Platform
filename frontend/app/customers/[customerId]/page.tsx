@@ -19,6 +19,7 @@ import { CustomerCountriesTable } from "@/components/customer-profile/customer-c
 import { CustomerRecentTransactions } from "@/components/customer-profile/customer-recent-transactions";
 import { CustomerAlertHistory } from "@/components/customer-profile/customer-alert-history";
 import { CustomerCaseHistory } from "@/components/customer-profile/customer-case-history";
+import { LinkedCustomersCard } from "@/components/customer-profile/linked-customers-card";
 import { useCustomerRiskProfile } from "@/hooks/use-customer-risk-profile";
 
 export default function CustomerRiskProfilePage({ params }: { params: Promise<{ customerId: string }> }) {
@@ -57,6 +58,7 @@ export default function CustomerRiskProfilePage({ params }: { params: Promise<{ 
             <CustomerDevicesTable devices={profile.behavior.devicesUsed} />
             <CustomerCountriesTable countries={profile.behavior.countriesUsed} />
           </div>
+          <LinkedCustomersCard customerId={customerId} />
           <div className="grid gap-6 lg:grid-cols-3">
             <CustomerRecentTransactions transactions={profile.recentTransactions} />
             <CustomerAlertHistory alerts={profile.recentAlerts} />

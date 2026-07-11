@@ -21,4 +21,12 @@ public interface TransactionRepository extends JpaRepository<BankingTransaction,
     boolean existsByCustomerAndCountryAndIdNot(Customer customer, String country, Long id);
 
     long countByCustomerAndCreatedAtAfter(Customer customer, LocalDateTime after);
+
+    boolean existsByDeviceIdAndCustomerNot(String deviceId, Customer customer);
+
+    boolean existsByIpAddressAndCustomerNot(String ipAddress, Customer customer);
+
+    List<BankingTransaction> findByDeviceIdIn(List<String> deviceIds);
+
+    List<BankingTransaction> findByIpAddressIn(List<String> ipAddresses);
 }

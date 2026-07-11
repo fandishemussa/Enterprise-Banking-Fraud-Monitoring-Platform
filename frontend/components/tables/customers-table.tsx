@@ -6,10 +6,10 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { Eye } from "lucide-react";
 import { DataTable } from "@/components/tables/data-table";
 import { RiskBadge } from "@/components/badges/risk-badge";
-import { Badge } from "@/components/ui/badge";
+import { CustomerStatusBadge } from "@/components/badges/customer-status-badge";
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { formatDate, titleCase } from "@/lib/formatters";
+import { formatDate } from "@/lib/formatters";
 import type { Customer } from "@/types";
 
 export function CustomersTable({ customers }: { customers: Customer[] }) {
@@ -23,11 +23,7 @@ export function CustomersTable({ customers }: { customers: Customer[] }) {
       {
         accessorKey: "status",
         header: "Status",
-        cell: ({ getValue }) => (
-          <Badge variant={getValue() === "ACTIVE" ? "success" : getValue() === "SUSPENDED" ? "warning" : "neutral"}>
-            {titleCase(getValue() as string)}
-          </Badge>
-        ),
+        cell: ({ getValue }) => <CustomerStatusBadge status={getValue() as never} />,
       },
       { accessorKey: "createdAt", header: "Created", cell: ({ getValue }) => formatDate(getValue() as string) },
       {

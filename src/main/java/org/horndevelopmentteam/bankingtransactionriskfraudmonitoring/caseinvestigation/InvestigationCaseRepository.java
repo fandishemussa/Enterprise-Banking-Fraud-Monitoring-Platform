@@ -16,5 +16,7 @@ public interface InvestigationCaseRepository extends JpaRepository<Investigation
 
     boolean existsByAlert_AlertId(String alertId);
 
+    Optional<InvestigationCase> findByAlert_AlertId(String alertId);
+
     List<InvestigationCase> findByAssignedTo(String assignedTo);
 }

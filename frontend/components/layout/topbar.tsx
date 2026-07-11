@@ -1,8 +1,9 @@
 "use client";
 
-import { Menu, Search, Bell, LogOut } from "lucide-react";
+import { Menu, Search, LogOut } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { NotificationBell } from "@/components/layout/notification-bell";
 import { useAuth } from "@/hooks/use-auth";
 
 function initialsOf(fullName: string): string {
@@ -25,9 +26,7 @@ export function Topbar({ onMenuClick }: { onMenuClick?: () => void }) {
       </div>
 
       <div className="ml-auto flex items-center gap-3">
-        <Button variant="ghost" size="icon" aria-label="Notifications">
-          <Bell className="h-4 w-4" />
-        </Button>
+        <NotificationBell />
         {user && (
           <>
             <div className="hidden text-right sm:block">

@@ -24,6 +24,7 @@ import {
   Radio,
   Activity,
   Lock,
+  BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
@@ -92,6 +93,12 @@ const NAV_GROUPS: NavGroup[] = [
         href: "/customer-locks",
         icon: Lock,
         roles: ["ADMIN", "INVESTIGATOR"],
+      },
+      {
+        label: "Analytics",
+        href: "/analytics",
+        icon: BarChart3,
+        roles: ["ADMIN", "VIEWER"],
       },
     ],
   },

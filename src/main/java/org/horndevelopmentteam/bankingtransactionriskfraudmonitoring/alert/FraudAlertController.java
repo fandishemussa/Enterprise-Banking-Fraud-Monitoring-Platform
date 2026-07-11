@@ -8,6 +8,7 @@ import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.alert.sla.A
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.alert.sla.AlertStatusHistoryResponse;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.caseinvestigation.InvestigationCaseService;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.common.ApiResponse;
+import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.common.BulkOperationResponse;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.common.PageSupport;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.customer.Customer;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.customer.CustomerService;
@@ -69,8 +70,37 @@ public class FraudAlertController {
     @PatchMapping("/api/v1/alerts/{alertId}/assign")
     @PreAuthorize("@access.allow('ADMIN', 'ANALYST', 'INVESTIGATOR')")
     public ApiResponse<FraudAlertResponse> assignAlert(@PathVariable String alertId,
-                                                        @Valid @RequestBody UpdateAlertAssignRequest request) {
-        return ApiResponse.success("Alert assigned", fraudAlertService.assign(alertId, request.assignedTo()));
+                                                        @Valid @RequestBody UpdateAlertAssignRequest request,
+                                                        Authentication authentication) {
+        FraudAlertResponse updated = fraudAlertService.assign(alertId, request.assignedTo());
+        investigationCaseService.syncAssigneeForAlert(
+                alertId, request.assignedTo(), authentication.getName(), roleOf(authentication));
+        return ApiResponse.success("Alert assigned", updated);
+    }
+
+    @PatchMapping("/api/v1/alerts/bulk-assign")
+    @PreAuthorize("@access.allow('ADMIN', 'ANALYST', 'INVESTIGATOR')")
+    public ApiResponse<BulkOperationResponse> bulkAssign(@Valid @RequestBody BulkAssignAlertsRequest request,
+                                                          Authentication authentication) {
+        BulkOperationResponse result = BulkOperationResponse.forEach(request.alertIds(), alertId -> {
+            fraudAlertService.assign(alertId, request.assignedTo());
+            investigationCaseService.syncAssigneeForAlert(
+                    alertId, request.assignedTo(), authentication.getName(), roleOf(authentication));
+        });
+        return ApiResponse.success(result.failures().isEmpty() ? "All alerts assigned" : "Some alerts could not be assigned", result);
+    }
+
+    @PatchMapping("/api/v1/alerts/bulk-status")
+    @PreAuthorize("@access.allow('ADMIN', 'ANALYST', 'INVESTIGATOR')")
+    public ApiResponse<BulkOperationResponse> bulkUpdateStatus(@Valid @RequestBody BulkUpdateAlertStatusRequest request,
+                                                                Authentication authentication) {
+        BulkOperationResponse result = BulkOperationResponse.forEach(request.alertIds(), alertId -> {
+            fraudAlertService.updateStatus(alertId, request.status(), authentication.getName());
+            if (request.status() == AlertStatus.INVESTIGATING) {
+                investigationCaseService.ensureCaseForAlert(alertId, authentication.getName(), roleOf(authentication));
+            }
+        });
+        return ApiResponse.success(result.failures().isEmpty() ? "All alerts updated" : "Some alerts could not be updated", result);
     }
 
     @PostMapping("/api/v1/alerts/{alertId}/escalate")
@@ -78,8 +108,23 @@ public class FraudAlertController {
     public ApiResponse<AlertEscalationResponse> escalateAlert(@PathVariable String alertId,
                                                                @Valid @RequestBody AlertEscalationRequest request,
                                                                Authentication authentication) {
-        return ApiResponse.success("Alert escalated",
-                fraudAlertService.escalate(alertId, request, authentication.getName()));
+        AlertEscalationResponse response = fraudAlertService.escalate(alertId, request, authentication.getName());
+        investigationCaseService.syncAssigneeForAlert(
+                alertId, request.escalatedTo(), authentication.getName(), roleOf(authentication));
+        return ApiResponse.success("Alert escalated", response);
+    }
+
+    @PostMapping("/api/v1/alerts/bulk-escalate")
+    @PreAuthorize("@access.allow('ADMIN', 'ANALYST', 'INVESTIGATOR')")
+    public ApiResponse<BulkOperationResponse> bulkEscalate(@Valid @RequestBody BulkEscalateAlertsRequest request,
+                                                            Authentication authentication) {
+        AlertEscalationRequest escalationRequest = new AlertEscalationRequest(request.escalatedTo(), request.reason());
+        BulkOperationResponse result = BulkOperationResponse.forEach(request.alertIds(), alertId -> {
+            fraudAlertService.escalate(alertId, escalationRequest, authentication.getName());
+            investigationCaseService.syncAssigneeForAlert(
+                    alertId, request.escalatedTo(), authentication.getName(), roleOf(authentication));
+        });
+        return ApiResponse.success(result.failures().isEmpty() ? "All alerts escalated" : "Some alerts could not be escalated", result);
     }
 
     @GetMapping("/api/v1/alerts/{alertId}/status-history")

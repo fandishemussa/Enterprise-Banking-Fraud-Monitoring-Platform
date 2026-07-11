@@ -84,15 +84,38 @@ public class InvestigationCaseService {
     /** Called when an alert's status moves to INVESTIGATING (see FraudAlertController#updateStatus) so
      * the "one case per alert" investigation workflow actually gets a case without requiring a
      * separate manual step. A no-op if a case already exists for this alert - re-opening an alert
-     * that was previously investigated should not spawn a duplicate case. */
+     * that was previously investigated should not spawn a duplicate case. The case inherits the
+     * alert's current assignee (not null) so it actually shows up in that user's case queue -
+     * getCasesVisibleTo scopes ANALYST/INVESTIGATOR/TESTER to cases assigned to them, so a case
+     * with no assignee would otherwise be invisible to the very user working the alert. */
     @Transactional
     public Optional<CaseResponse> ensureCaseForAlert(String alertId, String actorUsername, String actorRole) {
         if (investigationCaseRepository.existsByAlert_AlertId(alertId)) {
             return Optional.empty();
         }
-        CreateCaseRequest request = new CreateCaseRequest(alertId, null,
+        FraudAlert alert = fraudAlertService.findByPublicIdOrThrow(alertId);
+        CreateCaseRequest request = new CreateCaseRequest(alertId, alert.getAssignedTo(),
                 "Auto-created: alert moved to Investigating");
         return Optional.of(createCase(request, actorUsername, actorRole));
+    }
+
+    /** Keeps a case's assignee in sync with its alert's assignee (see FraudAlertController#assignAlert
+     * and #bulkAssign) - without this, reassigning the alert to someone else would leave the case
+     * invisible to the new assignee (same underlying issue ensureCaseForAlert fixes for creation).
+     * A no-op if no case exists yet for this alert or the assignee is already correct. */
+    @Transactional
+    public void syncAssigneeForAlert(String alertId, String assignedTo, String actorUsername, String actorRole) {
+        investigationCaseRepository.findByAlert_AlertId(alertId).ifPresent(investigationCase -> {
+            if (Objects.equals(investigationCase.getAssignedTo(), assignedTo)) {
+                return;
+            }
+            investigationCase.setAssignedTo(assignedTo);
+            investigationCase.setUpdatedAt(LocalDateTime.now());
+            investigationCaseRepository.save(investigationCase);
+            caseTimelineService.recordEvent(investigationCase.getCaseId(), CaseTimelineEventType.CASE_ASSIGNED,
+                    "Case assigned", "Assigned to " + assignedTo + " (following alert assignment)",
+                    actorUsername, actorRole);
+        });
     }
 
     @Transactional(readOnly = true)

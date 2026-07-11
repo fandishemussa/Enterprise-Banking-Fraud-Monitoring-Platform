@@ -4,6 +4,7 @@ import {
   buildMockCustomerRiskProfile,
   mockAccounts,
   mockAlertEscalations,
+  mockAnalyticsSummary,
   mockAlerts,
   mockAlertStatusHistory,
   mockAuditLogs,
@@ -41,12 +42,15 @@ import type {
   AlertEscalation,
   AlertEscalationPayload,
   AlertSlaPolicy,
+  AnalyticsSummary,
   AlertSlaPolicyPayload,
   AlertSlaResult,
   AlertStatusHistory,
   ApiResult,
   AppUser,
   AssignableUser,
+  BulkOperationResponse,
+  NotificationItem,
   AuditLog,
   BankingTransaction,
   CaseNote,
@@ -69,6 +73,7 @@ import type {
   FraudRuleVersion,
   IngestionRun,
   InvestigationCase,
+  LinkedCustomer,
   LoginResponse,
   MlHealth,
   MlModelInfo,
@@ -172,6 +177,10 @@ export async function getCustomerRiskProfile(customerId: string): Promise<ApiRes
   );
 }
 
+export async function getLinkedCustomers(customerId: string): Promise<ApiResult<LinkedCustomer[]>> {
+  return withFallback(() => fetchSpring<LinkedCustomer[]>(endpoints.linkedCustomers(customerId)), []);
+}
+
 // --- Customer lock workflow ---------------------------------------------------------------
 
 export async function lockCustomer(customerId: string, reason: string): Promise<CustomerLockRequest> {
@@ -250,6 +259,49 @@ export async function assignAlert(alertId: string, payload: { assignedTo: string
   } catch {
     return { data: null, usingMockData: true };
   }
+}
+
+export async function bulkAssignAlerts(alertIds: string[], assignedTo: string): Promise<BulkOperationResponse> {
+  return fetchSpring<BulkOperationResponse>(endpoints.alertBulkAssign, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ alertIds, assignedTo }),
+  });
+}
+
+export async function bulkEscalateAlerts(
+  alertIds: string[],
+  escalatedTo: string,
+  reason?: string,
+): Promise<BulkOperationResponse> {
+  return fetchSpring<BulkOperationResponse>(endpoints.alertBulkEscalate, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ alertIds, escalatedTo, reason }),
+  });
+}
+
+export async function bulkUpdateAlertStatus(alertIds: string[], status: string): Promise<BulkOperationResponse> {
+  return fetchSpring<BulkOperationResponse>(endpoints.alertBulkStatus, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ alertIds, status }),
+  });
+}
+
+export async function getNotifications(since?: string): Promise<NotificationItem[]> {
+  return fetchSpring<NotificationItem[]>(endpoints.notifications(since));
+}
+
+export async function bulkUpdateCases(
+  caseIds: string[],
+  payload: { status?: string; assignedTo?: string },
+): Promise<BulkOperationResponse> {
+  return fetchSpring<BulkOperationResponse>(endpoints.caseBulkUpdate, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ caseIds, ...payload }),
+  });
 }
 
 export async function getCases(): Promise<ApiResult<InvestigationCase[]>> {
@@ -595,6 +647,12 @@ export async function getCaseStatusHistory(caseId: string): Promise<ApiResult<Ca
     () => fetchSpring<CaseStatusHistory[]>(endpoints.caseStatusHistory(caseId)),
     mockCaseStatusHistory.filter((h) => h.caseId === caseId),
   );
+}
+
+// --- Analytics & reporting -----------------------------------------------------------------
+
+export async function getAnalyticsSummary(): Promise<ApiResult<AnalyticsSummary>> {
+  return withFallback(() => fetchSpring<AnalyticsSummary>(endpoints.analyticsSummary), mockAnalyticsSummary);
 }
 
 // --- Alert SLA and escalation monitoring --------------------------------------------------
