@@ -120,13 +120,37 @@ auto-created on first startup (`admin` / `Admin@12345` by default - override via
 
 | Role | Can do |
 |---|---|
-| `ADMIN` | Everything, including user management |
-| `ANALYST` | Create transactions/test transactions, manage alerts and cases |
-| `INVESTIGATOR` | Manage alerts and cases, read-only elsewhere |
-| `TESTER` | Submit test transactions only |
-| `VIEWER` | Read-only everywhere |
+| `ADMIN` | Everything, including user management. Sees every alert/case, not just their own. |
+| `ANALYST` | Create transactions/test transactions, manage alerts and cases assigned to them |
+| `INVESTIGATOR` | Manage alerts and cases assigned to them, read-only elsewhere |
+| `TESTER` | Submit test transactions; only sees alerts/cases assigned to them |
+| `VIEWER` | Read-only everywhere - sees every alert/case (for oversight), can't change anything |
+
+**Assignment-based visibility**: `GET /api/v1/alerts` and `GET /api/v1/cases` are scoped per role
+(`FraudAlertService#getAlertsVisibleTo`, `InvestigationCaseService#getCasesVisibleTo`) - `ANALYST`,
+`INVESTIGATOR`, and `TESTER` only see alerts/cases where `assignedTo` matches their own username (their
+working queue); `ADMIN` and `VIEWER` always see everything. Escalating or assigning an alert works
+between any of `ADMIN`/`ANALYST`/`INVESTIGATOR` (see the assignee dropdown on the Fraud Alerts page,
+backed by `GET /api/v1/directory/assignable-users`).
 
 Unauthenticated requests get `401`; authenticated requests with an insufficient role get `403`.
+
+### Demo users (dev profile only)
+
+Besides the default admin, `DemoUserSeeder` creates one account per non-admin role on startup (skipped
+in `prod`, and per-username idempotent so it never touches an already-existing account):
+
+| Username | Role | Password |
+|---|---|---|
+| `analyst1` / `analyst2` | `ANALYST` | `Demo@12345` |
+| `investigator1` | `INVESTIGATOR` | `Demo@12345` |
+| `viewer1` | `VIEWER` | `Demo@12345` |
+| `tester1` | `TESTER` | `Demo@12345` |
+
+`DataSeeder` also assigns a couple of the seeded alerts to `analyst1`/`analyst2`/`investigator1` so the
+assignment-based visibility rule above has real data to show immediately - log in as `analyst1` and the
+Fraud Alerts / Investigation Cases pages should show just their queue, while `admin` or `viewer1` see
+everything.
 
 ## Getting started
 

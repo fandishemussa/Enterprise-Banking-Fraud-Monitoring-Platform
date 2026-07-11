@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { assignAlert, getAlerts, updateAlertStatus } from "@/lib/api";
+import { assignAlert, escalateAlert, getAlerts, updateAlertStatus } from "@/lib/api";
 import { useApiResource } from "@/hooks/use-api-resource";
+import type { AlertEscalationPayload } from "@/types";
 
 export function useAlerts() {
   const resource = useApiResource(getAlerts);
@@ -30,5 +31,16 @@ export function useAlerts() {
     }
   }
 
-  return { ...resource, mutating, changeStatus, assign };
+  async function escalate(alertId: string, payload: AlertEscalationPayload) {
+    setMutating(true);
+    try {
+      const result = await escalateAlert(alertId, payload);
+      resource.refetch();
+      return result;
+    } finally {
+      setMutating(false);
+    }
+  }
+
+  return { ...resource, mutating, changeStatus, assign, escalate };
 }

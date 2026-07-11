@@ -9,7 +9,10 @@ RUN ./mvnw -B clean package -DskipTests
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system app && useradd --system --gid app --no-create-home app
 COPY --from=build /app/target/*.jar app.jar
-EXPOSE 8080
+RUN chown app:app app.jar
+USER app
+EXPOSE 8081
 ENTRYPOINT ["java", "-jar", "app.jar"]

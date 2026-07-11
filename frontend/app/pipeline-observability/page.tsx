@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { PageHeader } from "@/components/layout/page-header";
 import { SectionCard } from "@/components/shared/section-card";
+import { CsvUploadCard } from "@/components/shared/csv-upload-card";
 import { DataTable } from "@/components/tables/data-table";
 import { DemoDataBanner } from "@/components/shared/demo-data-banner";
 import { LoadingState } from "@/components/shared/loading-state";
@@ -17,8 +18,13 @@ import type { PipelineRun } from "@/types";
 import { CheckCircle2, Clock, Workflow, XCircle } from "lucide-react";
 
 export default function PipelineObservabilityPage() {
-  const { data: metrics, isLoading: metricsLoading } = usePipelineMetrics();
+  const { data: metrics, isLoading: metricsLoading, refetch: refetchMetrics } = usePipelineMetrics();
   const { data: runs, isLoading: runsLoading, error, usingMockData, refetch } = usePipelineRuns();
+
+  function handleUploaded() {
+    refetch();
+    refetchMetrics();
+  }
 
   const chartData = useMemo(
     () => (runs ?? []).map((run) => ({ name: run.runId, processed: run.recordsProcessed, failed: run.recordsFailed })).reverse(),
@@ -44,6 +50,8 @@ export default function PipelineObservabilityPage() {
     <div className="space-y-6">
       <PageHeader title="Pipeline Observability" description="Ingestion and data quality pipeline run history" />
       {usingMockData && <DemoDataBanner />}
+
+      <CsvUploadCard onUploaded={handleUploaded} />
 
       {metricsLoading || !metrics ? (
         <LoadingState label="Loading pipeline metrics..." />

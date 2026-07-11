@@ -12,7 +12,9 @@ public record UserResponse(
         UserStatus status,
         LocalDateTime createdAt,
         LocalDateTime updatedAt,
-        LocalDateTime lastLoginAt
+        LocalDateTime lastLoginAt,
+        int failedLoginAttempts,
+        LocalDateTime lockedUntil
 ) {
 
     public static UserResponse from(AppUser user) {
@@ -25,7 +27,9 @@ public record UserResponse(
                 user.getStatus(),
                 user.getCreatedAt(),
                 user.getUpdatedAt(),
-                user.getLastLoginAt()
+                user.getLastLoginAt(),
+                user.getFailedLoginAttempts(),
+                user.getLockedUntil()
         );
     }
 }

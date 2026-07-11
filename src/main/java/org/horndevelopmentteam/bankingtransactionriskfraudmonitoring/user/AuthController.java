@@ -34,8 +34,11 @@ public class AuthController {
     }
 
     @PostMapping("/logout")
-    public ApiResponse<Void> logout() {
-        // Stateless JWT - nothing to invalidate server-side; the client discards its token.
+    public ApiResponse<Void> logout(Authentication authentication) {
+        // Bumps tokenVersion so this (and every other outstanding) token for the user is rejected
+        // by JwtAuthenticationFilter on its very next use - real revocation, not just client-side
+        // token discard.
+        appUserService.invalidateAllSessions(authentication.getName());
         return ApiResponse.success("Logged out", null);
     }
 

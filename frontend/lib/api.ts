@@ -1,42 +1,88 @@
 import { endpoints } from "@/lib/endpoints";
 import { clearSession, getToken } from "@/lib/auth";
 import {
+  buildMockCustomerRiskProfile,
   mockAccounts,
+  mockAlertEscalations,
   mockAlerts,
+  mockAlertStatusHistory,
   mockAuditLogs,
+  mockCaseNotes,
   mockCases,
+  mockCaseStatusHistory,
+  mockCaseTimelineEvents,
   mockCustomers,
   mockDashboardSummary,
   mockDataQualityResults,
   mockDataQualityRuns,
   mockDeadLetterTransactions,
+  mockFeatureDrift,
+  mockFraudRules,
+  mockFraudRuleVersions,
   mockMlHealth,
   mockMlModelInfo,
+  mockMlPredictions,
+  mockModelMonitoringSummary,
   mockPipelineMetrics,
   mockPipelineRuns,
+  mockRetrainingHistory,
   mockRiskScores,
+  mockScoreDistribution,
+  mockSlaPolicies,
+  mockSlaResults,
+  mockSlaSummary,
+  mockStreamingDeadLetterEvents,
+  mockStreamingEvents,
+  mockStreamingMetric,
   mockTransactions,
 } from "@/lib/mock-data";
 import type {
   Account,
+  AlertEscalation,
+  AlertEscalationPayload,
+  AlertSlaPolicy,
+  AlertSlaPolicyPayload,
+  AlertSlaResult,
+  AlertStatusHistory,
   ApiResult,
   AppUser,
+  AssignableUser,
   AuditLog,
   BankingTransaction,
+  CaseNote,
+  CaseNotePayload,
+  CaseStatusHistory,
+  CaseTimelineEvent,
   CreateUserPayload,
   Customer,
+  CustomerLockRequest,
+  CustomerRiskProfile,
   DashboardSummary,
   DataQualityResult,
   DataQualityRun,
+  DeadLetterEvent,
   DeadLetterTransaction,
+  FeatureDriftResult,
   FraudAlert,
+  FraudRule,
+  FraudRulePayload,
+  FraudRuleVersion,
+  IngestionRun,
   InvestigationCase,
   LoginResponse,
   MlHealth,
   MlModelInfo,
+  MlPredictionLog,
+  ModelMonitoringSummary,
   PipelineMetrics,
   PipelineRun,
+  PublishStreamingTransactionPayload,
+  RetrainingHistoryEntry,
   RiskScore,
+  ScoreDistribution,
+  SlaSummary,
+  StreamingEventLog,
+  StreamingMetric,
   TestTransactionPayload,
   TestTransactionResult,
   UpdateUserPayload,
@@ -73,7 +119,19 @@ async function fetchWithTimeout(url: string, init?: RequestInit): Promise<Respon
       throw new ApiAuthError(response.status);
     }
     if (!response.ok) {
-      throw new Error(`Request to ${url} failed with status ${response.status}`);
+      // Backend errors follow ErrorResponse { status, error, message, path, traceId, timestamp } -
+      // surface that message (e.g. "password must be at least 8 characters...") instead of a bare
+      // status code, since it's the only place that explains *why* the request was rejected.
+      let message = `Request to ${url} failed with status ${response.status}`;
+      try {
+        const body = await response.clone().json();
+        if (typeof body?.message === "string" && body.message.length > 0) {
+          message = body.message;
+        }
+      } catch {
+        // response body wasn't JSON (or was empty) - fall back to the generic message above
+      }
+      throw new Error(message);
     }
     return response;
   } finally {
@@ -105,6 +163,51 @@ async function withFallback<T>(fetcher: () => Promise<T>, mockData: T): Promise<
 
 export async function getCustomers(): Promise<ApiResult<Customer[]>> {
   return withFallback(() => fetchSpring<Customer[]>(endpoints.customers), mockCustomers);
+}
+
+export async function getCustomerRiskProfile(customerId: string): Promise<ApiResult<CustomerRiskProfile | null>> {
+  return withFallback(
+    () => fetchSpring<CustomerRiskProfile>(endpoints.customerRiskProfile(customerId)),
+    buildMockCustomerRiskProfile(customerId),
+  );
+}
+
+// --- Customer lock workflow ---------------------------------------------------------------
+
+export async function lockCustomer(customerId: string, reason: string): Promise<CustomerLockRequest> {
+  return fetchSpring<CustomerLockRequest>(endpoints.customerLock(customerId), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export async function unlockCustomer(customerId: string): Promise<void> {
+  await fetchSpring<void>(endpoints.customerUnlock(customerId), { method: "POST" });
+}
+
+export async function getCustomerLockRequests(customerId: string): Promise<CustomerLockRequest[]> {
+  return fetchSpring<CustomerLockRequest[]>(endpoints.customerLockRequests(customerId));
+}
+
+export async function getPendingLockRequests(): Promise<ApiResult<CustomerLockRequest[]>> {
+  return withFallback(() => fetchSpring<CustomerLockRequest[]>(endpoints.pendingLockRequests), []);
+}
+
+export async function approveLockRequest(lockRequestId: string, notes?: string): Promise<CustomerLockRequest> {
+  return fetchSpring<CustomerLockRequest>(endpoints.lockRequestApprove(lockRequestId), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ notes }),
+  });
+}
+
+export async function rejectLockRequest(lockRequestId: string, notes?: string): Promise<CustomerLockRequest> {
+  return fetchSpring<CustomerLockRequest>(endpoints.lockRequestReject(lockRequestId), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ notes }),
+  });
 }
 
 export async function getAccounts(): Promise<ApiResult<Account[]>> {
@@ -153,6 +256,13 @@ export async function getCases(): Promise<ApiResult<InvestigationCase[]>> {
   return withFallback(() => fetchSpring<InvestigationCase[]>(endpoints.cases), mockCases);
 }
 
+export async function getCaseById(caseId: string): Promise<ApiResult<InvestigationCase | null>> {
+  return withFallback(
+    () => fetchSpring<InvestigationCase>(endpoints.caseById(caseId)),
+    mockCases.find((c) => c.caseId === caseId) ?? null,
+  );
+}
+
 export async function createCase(payload: {
   alertId: string;
   assignedTo?: string;
@@ -186,6 +296,19 @@ export async function updateCase(
   }
 }
 
+export async function updateCaseDecision(caseId: string, decision: string): Promise<ApiResult<InvestigationCase | null>> {
+  try {
+    const data = await fetchSpring<InvestigationCase>(endpoints.caseDecision(caseId), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision }),
+    });
+    return { data, usingMockData: false };
+  } catch {
+    return { data: null, usingMockData: true };
+  }
+}
+
 export async function getAuditLogs(): Promise<ApiResult<AuditLog[]>> {
   return withFallback(() => fetchSpring<AuditLog[]>(endpoints.auditLogs), mockAuditLogs);
 }
@@ -196,6 +319,12 @@ export async function getPipelineRuns(): Promise<ApiResult<PipelineRun[]>> {
 
 export async function getPipelineMetrics(): Promise<ApiResult<PipelineMetrics>> {
   return withFallback(() => fetchSpring<PipelineMetrics>(endpoints.pipelineMetrics), mockPipelineMetrics);
+}
+
+export async function uploadIngestionCsv(file: File): Promise<IngestionRun> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return fetchSpring<IngestionRun>(endpoints.ingestionUpload, { method: "POST", body: formData });
 }
 
 export async function getDataQualityRuns(): Promise<ApiResult<DataQualityRun[]>> {
@@ -234,6 +363,31 @@ export async function getMlHealth(): Promise<ApiResult<MlHealth>> {
 
 export async function getMlModelInfo(): Promise<ApiResult<MlModelInfo>> {
   return withFallback(() => fetchMl<MlModelInfo>(endpoints.mlModelInfo), mockMlModelInfo);
+}
+
+// --- Model monitoring and drift detection -------------------------------------------------
+
+export async function getModelMonitoringSummary(): Promise<ApiResult<ModelMonitoringSummary>> {
+  return withFallback(() => fetchMl<ModelMonitoringSummary>(endpoints.mlMonitoringSummary), mockModelMonitoringSummary);
+}
+
+export async function getModelPredictions(): Promise<ApiResult<MlPredictionLog[]>> {
+  return withFallback(() => fetchMl<MlPredictionLog[]>(endpoints.mlMonitoringPredictions), mockMlPredictions);
+}
+
+export async function getModelScoreDistribution(): Promise<ApiResult<ScoreDistribution>> {
+  return withFallback(() => fetchMl<ScoreDistribution>(endpoints.mlMonitoringScoreDistribution), mockScoreDistribution);
+}
+
+export async function getModelDrift(): Promise<ApiResult<FeatureDriftResult[]>> {
+  return withFallback(() => fetchMl<FeatureDriftResult[]>(endpoints.mlMonitoringDrift), mockFeatureDrift);
+}
+
+export async function getRetrainingHistory(): Promise<ApiResult<RetrainingHistoryEntry[]>> {
+  return withFallback(
+    () => fetchMl<RetrainingHistoryEntry[]>(endpoints.mlMonitoringRetrainingHistory),
+    mockRetrainingHistory,
+  );
 }
 
 /**
@@ -311,6 +465,10 @@ export async function getUsers(): Promise<AppUser[]> {
   return fetchSpring<AppUser[]>(endpoints.users);
 }
 
+export async function getAssignableUsers(): Promise<AssignableUser[]> {
+  return fetchSpring<AssignableUser[]>(endpoints.assignableUsers);
+}
+
 export async function createUser(payload: CreateUserPayload): Promise<AppUser> {
   return fetchSpring<AppUser>(endpoints.users, {
     method: "POST",
@@ -353,4 +511,179 @@ export async function submitTestTransaction(payload: TestTransactionPayload): Pr
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+}
+
+// --- Fraud rules management --------------------------------------------------------------
+
+export async function getFraudRules(): Promise<ApiResult<FraudRule[]>> {
+  return withFallback(() => fetchSpring<FraudRule[]>(endpoints.fraudRules), mockFraudRules);
+}
+
+export async function getFraudRuleById(ruleId: string): Promise<FraudRule> {
+  return fetchSpring<FraudRule>(endpoints.fraudRuleById(ruleId));
+}
+
+export async function createFraudRule(payload: FraudRulePayload): Promise<FraudRule> {
+  return fetchSpring<FraudRule>(endpoints.fraudRules, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateFraudRule(ruleId: string, payload: FraudRulePayload): Promise<FraudRule> {
+  return fetchSpring<FraudRule>(endpoints.fraudRuleById(ruleId), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function enableFraudRule(ruleId: string): Promise<FraudRule> {
+  return fetchSpring<FraudRule>(endpoints.fraudRuleEnable(ruleId), { method: "PATCH" });
+}
+
+export async function disableFraudRule(ruleId: string): Promise<FraudRule> {
+  return fetchSpring<FraudRule>(endpoints.fraudRuleDisable(ruleId), { method: "PATCH" });
+}
+
+export async function getFraudRuleVersions(ruleId: string): Promise<ApiResult<FraudRuleVersion[]>> {
+  return withFallback(
+    () => fetchSpring<FraudRuleVersion[]>(endpoints.fraudRuleVersions(ruleId)),
+    mockFraudRuleVersions.filter((v) => v.ruleId === ruleId),
+  );
+}
+
+// --- Case timeline and analyst notes ------------------------------------------------------
+
+export async function getCaseTimeline(caseId: string): Promise<ApiResult<CaseTimelineEvent[]>> {
+  return withFallback(
+    () => fetchSpring<CaseTimelineEvent[]>(endpoints.caseTimeline(caseId)),
+    mockCaseTimelineEvents.filter((e) => e.caseId === caseId),
+  );
+}
+
+export async function getCaseNotes(caseId: string): Promise<ApiResult<CaseNote[]>> {
+  return withFallback(
+    () => fetchSpring<CaseNote[]>(endpoints.caseNotes(caseId)),
+    mockCaseNotes.filter((n) => n.caseId === caseId),
+  );
+}
+
+export async function addCaseNote(caseId: string, payload: CaseNotePayload): Promise<CaseNote> {
+  return fetchSpring<CaseNote>(endpoints.caseNotes(caseId), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function updateCaseNote(caseId: string, noteId: string, payload: CaseNotePayload): Promise<CaseNote> {
+  return fetchSpring<CaseNote>(endpoints.caseNoteById(caseId, noteId), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteCaseNote(caseId: string, noteId: string): Promise<void> {
+  await fetchWithTimeout(endpoints.caseNoteById(caseId, noteId), { method: "DELETE" });
+}
+
+export async function getCaseStatusHistory(caseId: string): Promise<ApiResult<CaseStatusHistory[]>> {
+  return withFallback(
+    () => fetchSpring<CaseStatusHistory[]>(endpoints.caseStatusHistory(caseId)),
+    mockCaseStatusHistory.filter((h) => h.caseId === caseId),
+  );
+}
+
+// --- Alert SLA and escalation monitoring --------------------------------------------------
+
+export async function getSlaSummary(): Promise<ApiResult<SlaSummary>> {
+  return withFallback(() => fetchSpring<SlaSummary>(endpoints.slaSummary), mockSlaSummary);
+}
+
+export async function getSlaAlerts(): Promise<ApiResult<AlertSlaResult[]>> {
+  return withFallback(() => fetchSpring<AlertSlaResult[]>(endpoints.slaAlerts), mockSlaResults);
+}
+
+export async function getBreachedSlaAlerts(): Promise<ApiResult<AlertSlaResult[]>> {
+  return withFallback(
+    () => fetchSpring<AlertSlaResult[]>(endpoints.slaBreached),
+    mockSlaResults.filter((r) => r.status === "BREACHED"),
+  );
+}
+
+export async function getNearBreachSlaAlerts(): Promise<ApiResult<AlertSlaResult[]>> {
+  return withFallback(
+    () => fetchSpring<AlertSlaResult[]>(endpoints.slaNearBreach),
+    mockSlaResults.filter((r) => r.status === "NEAR_BREACH"),
+  );
+}
+
+export async function getSlaPolicies(): Promise<ApiResult<AlertSlaPolicy[]>> {
+  return withFallback(() => fetchSpring<AlertSlaPolicy[]>(endpoints.slaPolicies), mockSlaPolicies);
+}
+
+export async function updateSlaPolicy(policyId: string, payload: AlertSlaPolicyPayload): Promise<AlertSlaPolicy> {
+  return fetchSpring<AlertSlaPolicy>(endpoints.slaPolicyById(policyId), {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function escalateAlert(alertId: string, payload: AlertEscalationPayload): Promise<AlertEscalation> {
+  return fetchSpring<AlertEscalation>(endpoints.alertEscalate(alertId), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getAlertStatusHistory(alertId: string): Promise<ApiResult<AlertStatusHistory[]>> {
+  return withFallback(
+    () => fetchSpring<AlertStatusHistory[]>(endpoints.alertStatusHistory(alertId)),
+    mockAlertStatusHistory.filter((h) => h.alertId === alertId),
+  );
+}
+
+export async function getAlertEscalations(alertId: string): Promise<ApiResult<AlertEscalation[]>> {
+  return withFallback(
+    () => fetchSpring<AlertEscalation[]>(endpoints.alertEscalations(alertId)),
+    mockAlertEscalations.filter((e) => e.alertId === alertId),
+  );
+}
+
+// --- Kafka/Redpanda streaming ingestion ---------------------------------------------------
+
+export async function publishStreamingTransaction(payload: PublishStreamingTransactionPayload): Promise<string> {
+  return fetchSpring<string>(endpoints.streamingPublish, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getStreamingMetrics(): Promise<ApiResult<StreamingMetric>> {
+  return withFallback(() => fetchSpring<StreamingMetric>(endpoints.streamingMetrics), mockStreamingMetric);
+}
+
+export async function getStreamingEvents(): Promise<ApiResult<StreamingEventLog[]>> {
+  return withFallback(() => fetchSpring<StreamingEventLog[]>(endpoints.streamingEvents), mockStreamingEvents);
+}
+
+export async function getStreamingDeadLetterEvents(): Promise<ApiResult<DeadLetterEvent[]>> {
+  return withFallback(
+    () => fetchSpring<DeadLetterEvent[]>(endpoints.streamingDeadLetterEvents),
+    mockStreamingDeadLetterEvents,
+  );
+}
+
+export async function retryStreamingDeadLetterEvent(eventId: string): Promise<DeadLetterEvent> {
+  return fetchSpring<DeadLetterEvent>(endpoints.streamingDeadLetterRetry(eventId), { method: "POST" });
+}
+
+export async function ignoreStreamingDeadLetterEvent(eventId: string): Promise<DeadLetterEvent> {
+  return fetchSpring<DeadLetterEvent>(endpoints.streamingDeadLetterIgnore(eventId), { method: "PATCH" });
 }

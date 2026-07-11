@@ -14,6 +14,8 @@ import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.risk.rules.
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.risk.rules.RuleResult;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.transaction.BankingTransaction;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.transaction.TransactionRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -46,9 +48,12 @@ public class RiskScoringService {
         int ruleScore = results.stream().mapToInt(RuleResult::points).sum();
         int cappedRuleScore = Math.min(ruleScore, 100);
 
+        // Includes ruleCode/severity alongside the name+score so the stored explanation is
+        // self-sufficient for the fraud-rules-management UI without a second lookup.
         String triggeredRules = results.stream()
                 .filter(RuleResult::triggered)
-                .map(r -> r.ruleName() + "(+" + r.points() + ")")
+                .map(r -> r.ruleName() + (r.ruleCode() != null ? "[" + r.ruleCode() + "]" : "")
+                        + "(+" + r.points() + (r.severity() != null ? ", " + r.severity() : "") + ")")
                 .collect(Collectors.joining(", "));
 
         String explanation = results.stream()
@@ -155,10 +160,8 @@ public class RiskScoringService {
     }
 
     @Transactional(readOnly = true)
-    public List<RiskScoreResponse> getAllRiskScores() {
-        return riskScoreRepository.findAll().stream()
-                .map(RiskScoreResponse::from)
-                .toList();
+    public Page<RiskScoreResponse> getAllRiskScores(Pageable pageable) {
+        return riskScoreRepository.findAll(pageable).map(RiskScoreResponse::from);
     }
 
     @Transactional(readOnly = true)

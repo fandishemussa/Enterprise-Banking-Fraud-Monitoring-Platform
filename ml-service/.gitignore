@@ -11,3 +11,4 @@ models/*.pickle
 ../data/processed/
 *.csv
 *.zip
+logs/*.jsonl

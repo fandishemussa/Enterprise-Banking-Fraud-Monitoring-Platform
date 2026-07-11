@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { UserPlus, AlertCircle } from "lucide-react";
 import { PageHeader } from "@/components/layout/page-header";
+import { SectionCard } from "@/components/shared/section-card";
 import { UsersTable } from "@/components/tables/users-table";
 import { LoadingState } from "@/components/shared/loading-state";
 import { ErrorState } from "@/components/shared/error-state";
@@ -17,6 +18,14 @@ import { createUser, resetUserPassword, updateUser, updateUserStatus } from "@/l
 import type { AppUser, Role } from "@/types";
 
 const ROLES: Role[] = ["ADMIN", "ANALYST", "INVESTIGATOR", "VIEWER", "TESTER"];
+
+const ROLE_CAPABILITIES: Record<Role, string> = {
+  ADMIN: "Full platform control: manage users and roles, create/edit/enable/disable fraud rules, manage SLA policies, plus everything below.",
+  ANALYST: "Work the fraud queue: assign/escalate/update alerts, create and manage investigation cases, upload CSV batches, publish test/streaming transactions, view all monitoring pages.",
+  INVESTIGATOR: "Work assigned alerts and cases: update status, assign/escalate, add case notes and timeline entries. Cannot create cases, manage fraud rules, SLA policies, or users.",
+  VIEWER: "Read-only across every dashboard and record (transactions, alerts, cases, customers, risk scores, audit logs). Cannot change anything.",
+  TESTER: "Generate synthetic test transactions and upload CSV batches / publish streaming test data for QA and demos. Read access elsewhere; cannot manage rules, SLA, or users.",
+};
 
 export default function UsersPage() {
   const { user, hasRole } = useAuth();
@@ -65,6 +74,17 @@ export default function UsersPage() {
           <span>{actionError}</span>
         </div>
       )}
+
+      <SectionCard title="Role Capabilities" description="What each role can see and do on this platform">
+        <ul className="divide-y divide-border">
+          {ROLES.map((r) => (
+            <li key={r} className="flex flex-col gap-1 py-2.5 sm:flex-row sm:items-baseline sm:gap-4">
+              <span className="w-28 shrink-0 text-sm font-semibold text-foreground">{r}</span>
+              <span className="text-xs text-muted-foreground">{ROLE_CAPABILITIES[r]}</span>
+            </li>
+          ))}
+        </ul>
+      </SectionCard>
 
       {isLoading ? (
         <LoadingState label="Loading users..." />
@@ -154,6 +174,7 @@ function CreateUserDialog({
               </option>
             ))}
           </Select>
+          <p className="text-xs text-muted-foreground">{ROLE_CAPABILITIES[role]}</p>
           {error && <p className="text-xs text-destructive">{error}</p>}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
@@ -232,6 +253,7 @@ function EditUserForm({
             </option>
           ))}
         </Select>
+        <p className="text-xs text-muted-foreground">{ROLE_CAPABILITIES[role]}</p>
         {error && <p className="text-xs text-destructive">{error}</p>}
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

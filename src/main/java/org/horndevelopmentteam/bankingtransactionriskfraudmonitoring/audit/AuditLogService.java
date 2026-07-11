@@ -1,13 +1,13 @@
 package org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.audit;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -38,9 +38,8 @@ public class AuditLogService {
         auditLogRepository.save(log);
     }
 
-    public List<AuditLogResponse> getAllAuditLogs() {
-        return auditLogRepository.findAll(Sort.by(Sort.Direction.DESC, "createdAt")).stream()
-                .map(AuditLogResponse::from)
-                .toList();
+    @Transactional(readOnly = true)
+    public Page<AuditLogResponse> getAllAuditLogs(Pageable pageable) {
+        return auditLogRepository.findAll(pageable).map(AuditLogResponse::from);
     }
 }

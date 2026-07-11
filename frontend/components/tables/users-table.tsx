@@ -1,11 +1,13 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
-import { KeyRound, Ban, CheckCircle2, Pencil } from "lucide-react";
+import Link from "next/link";
+import { KeyRound, Ban, CheckCircle2, Pencil, ScrollText } from "lucide-react";
 import { DataTable } from "@/components/tables/data-table";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { formatDate } from "@/lib/formatters";
+import { cn } from "@/lib/utils";
 import type { AppUser, UserStatus } from "@/types";
 
 const STATUS_VARIANT: Record<UserStatus, "success" | "destructive" | "warning"> = {
@@ -57,6 +59,13 @@ export function UsersTable({ users, currentUsername, onEdit, onResetPassword, on
             <Button variant="ghost" size="icon" aria-label="Reset password" onClick={() => onResetPassword(user)}>
               <KeyRound className="h-3.5 w-3.5" />
             </Button>
+            <Link
+              href={`/audit-logs?entityId=${encodeURIComponent(user.userId)}`}
+              aria-label="View audit trail"
+              className={cn(buttonVariants({ variant: "ghost", size: "icon" }))}
+            >
+              <ScrollText className="h-3.5 w-3.5" />
+            </Link>
             <Button
               variant="ghost"
               size="icon"

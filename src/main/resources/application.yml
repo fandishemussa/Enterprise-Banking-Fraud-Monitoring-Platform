@@ -9,24 +9,73 @@ spring:
     password: ${DB_PASSWORD:postgres}
   jpa:
     hibernate:
-      ddl-auto: update
+      # Flyway (migrations in db/migration) is the only thing allowed to change the schema;
+      # Hibernate just validates entities match what Flyway already created.
+      ddl-auto: validate
     open-in-view: false
     properties:
       hibernate:
         format_sql: true
+  flyway:
+    enabled: ${FLYWAY_ENABLED:true}
+    baseline-on-migrate: true
+    locations: classpath:db/migration
   docker:
     compose:
       enabled: true
       file: docker-compose.yml
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # Events are serialized to a JSON string by TransactionEventProducer itself (via a plain
+      # ObjectMapper, same reasoning as FraudRuleService) rather than using Kafka's JsonSerializer,
+      # so both producer and consumer only ever need String (de)serializers.
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    consumer:
+      group-id: fraud-monitoring-streaming
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+    listener:
+      # Don't retry-loop forever on a message that's already been sent to dead-letter-transactions;
+      # errors are handled explicitly inside TransactionEventConsumer instead.
+      ack-mode: record
+
+kafka:
+  topics:
+    raw-transactions: ${KAFKA_RAW_TRANSACTIONS_TOPIC:raw-transactions}
+    scored-transactions: ${KAFKA_SCORED_TRANSACTIONS_TOPIC:scored-transactions}
+    fraud-alerts: ${KAFKA_FRAUD_ALERTS_TOPIC:fraud-alerts}
+    dead-letter-transactions: ${KAFKA_DEAD_LETTER_TOPIC:dead-letter-transactions}
 
 server:
-  port: ${SERVER_PORT:8081}
+  port: ${SERVER_PORT:8080}
 
 ml:
   service:
     url: ${ML_SERVICE_URL:http://localhost:8000}
     connect-timeout-ms: ${ML_SERVICE_CONNECT_TIMEOUT_MS:1000}
     read-timeout-ms: ${ML_SERVICE_READ_TIMEOUT_MS:2000}
+    # Must match ml-service's ML_API_KEY. Blank (default) means neither side enforces it - fine for
+    # local dev, but set a real shared secret in any environment reachable outside your own network.
+    api-key: ${ML_SERVICE_API_KEY:}
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      mlService:
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        # Just under ml.service.read-timeout-ms (2000ms) - a call that takes this long already
+        # burned the timeout internally (MlScoringClient always catches the exception itself), so
+        # duration is the real "is the ML service healthy" signal here, not thrown exceptions.
+        slow-call-duration-threshold: 1500ms
+        slow-call-rate-threshold: 50
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+        register-health-indicator: true
 
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
@@ -35,11 +84,21 @@ security:
   # Secure by default. Set to false only for local testing without a login flow -
   # restores the original fully-open behavior (see docs/architecture notes in SecurityConfig).
   enabled: ${SECURITY_ENABLED:true}
+  login:
+    max-failed-attempts: ${LOGIN_MAX_FAILED_ATTEMPTS:5}
+    lockout-duration-minutes: ${LOGIN_LOCKOUT_DURATION_MINUTES:15}
 
 jwt:
   # Local dev default only - override with a real random secret via JWT_SECRET in production.
   secret: ${JWT_SECRET:local-dev-insecure-jwt-signing-secret-change-this-in-production-0123456789}
   expiration-ms: ${JWT_EXPIRATION_MS:86400000}
+
+pii:
+  encryption:
+    # Base64-encoded 256-bit AES key. Blank (default) disables field-level PII encryption entirely -
+    # converters pass values through unchanged, so local dev/tests work without generating a key.
+    # Generate one with: openssl rand -base64 32
+    key: ${PII_ENCRYPTION_KEY:}
 
 admin:
   default-username: ${DEFAULT_ADMIN_USERNAME:admin}
@@ -52,3 +111,12 @@ springdoc:
     path: /api-docs
   swagger-ui:
     path: /swagger-ui.html
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized

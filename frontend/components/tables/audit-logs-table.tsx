@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatDate, titleCase } from "@/lib/formatters";
 import type { AuditLog } from "@/types";
 
-export function AuditLogsTable({ logs }: { logs: AuditLog[] }) {
+export function AuditLogsTable({ logs, initialFilter }: { logs: AuditLog[]; initialFilter?: string }) {
   const columns = useMemo<ColumnDef<AuditLog>[]>(
     () => [
       {
@@ -25,5 +25,13 @@ export function AuditLogsTable({ logs }: { logs: AuditLog[] }) {
     [],
   );
 
-  return <DataTable columns={columns} data={logs} searchPlaceholder="Search audit logs..." emptyMessage="No audit log entries found." />;
+  return (
+    <DataTable
+      columns={columns}
+      data={logs}
+      searchPlaceholder="Search audit logs..."
+      emptyMessage="No audit log entries found."
+      initialGlobalFilter={initialFilter}
+    />
+  );
 }

@@ -1,6 +1,10 @@
 package org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.alert;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.RequiredArgsConstructor;
+import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.alert.sla.AlertEscalationRequest;
+import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.alert.sla.AlertEscalationResponse;
+import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.alert.sla.AlertSlaService;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.audit.AuditEventType;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.audit.AuditLogService;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.common.IdSequenceService;
@@ -9,6 +13,8 @@ import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.customer.Cu
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.risk.enums.RiskLevel;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.risk.RiskScore;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.transaction.BankingTransaction;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,9 +26,13 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class FraudAlertService {
 
+    private static final String SYSTEM_USER = "system";
+
     private final FraudAlertRepository fraudAlertRepository;
     private final IdSequenceService idSequenceService;
     private final AuditLogService auditLogService;
+    private final MeterRegistry meterRegistry;
+    private final AlertSlaService alertSlaService;
 
     /**
      * Only HIGH/CRITICAL risk transactions reach this method (see TransactionService);
@@ -63,14 +73,29 @@ public class FraudAlertService {
                 "Fraud alert " + saved.getAlertId() + " created for transaction " + transaction.getTransactionId()
         );
 
+        meterRegistry.counter("fraud_alerts_created_total", "priority", priority.name()).increment();
+
+        alertSlaService.createSlaResult(saved);
+
         return saved;
     }
 
     @Transactional(readOnly = true)
-    public List<FraudAlertResponse> getAllAlerts() {
-        return fraudAlertRepository.findAll().stream()
-                .map(FraudAlertResponse::from)
-                .toList();
+    public Page<FraudAlertResponse> getAllAlerts(Pageable pageable) {
+        return fraudAlertRepository.findAll(pageable).map(FraudAlertResponse::from);
+    }
+
+    /** Only the roles that actually work the alert queue (ANALYST/INVESTIGATOR/TESTER) get scoped
+     * to alerts assigned to them; everyone else sees everything - ADMIN and VIEWER for oversight,
+     * and anything else (including the anonymous principal when SECURITY_ENABLED=false) defaults
+     * to unrestricted rather than silently filtering to an empty list. */
+    @Transactional(readOnly = true)
+    public Page<FraudAlertResponse> getAlertsVisibleTo(String username, String role, Pageable pageable) {
+        boolean scoped = "ANALYST".equals(role) || "INVESTIGATOR".equals(role) || "TESTER".equals(role);
+        if (!scoped) {
+            return getAllAlerts(pageable);
+        }
+        return fraudAlertRepository.findByAssignedTo(username, pageable).map(FraudAlertResponse::from);
     }
 
     @Transactional(readOnly = true)
@@ -80,6 +105,11 @@ public class FraudAlertService {
 
     @Transactional
     public FraudAlertResponse updateStatus(String alertId, AlertStatus newStatus) {
+        return updateStatus(alertId, newStatus, SYSTEM_USER);
+    }
+
+    @Transactional
+    public FraudAlertResponse updateStatus(String alertId, AlertStatus newStatus, String actorUsername) {
         FraudAlert alert = findByPublicIdOrThrow(alertId);
         AlertStatus oldStatus = alert.getStatus();
         alert.setStatus(newStatus);
@@ -99,6 +129,9 @@ public class FraudAlertService {
                 "Alert " + saved.getAlertId() + " status changed from " + oldStatus + " to " + newStatus
         );
 
+        alertSlaService.recordStatusChange(saved, oldStatus, newStatus, actorUsername,
+                "Status changed via alert update");
+
         return FraudAlertResponse.from(saved);
     }
 
@@ -108,6 +141,31 @@ public class FraudAlertService {
         alert.setAssignedTo(assignedTo);
         alert.setUpdatedAt(LocalDateTime.now());
         return FraudAlertResponse.from(fraudAlertRepository.save(alert));
+    }
+
+    @Transactional
+    public AlertEscalationResponse escalate(String alertId, AlertEscalationRequest request, String actorUsername) {
+        FraudAlert alert = findByPublicIdOrThrow(alertId);
+        AlertStatus oldStatus = alert.getStatus();
+        String previousAssignee = alert.getAssignedTo();
+
+        alert.setStatus(AlertStatus.ESCALATED);
+        alert.setAssignedTo(request.escalatedTo());
+        alert.setUpdatedAt(LocalDateTime.now());
+        FraudAlert saved = fraudAlertRepository.save(alert);
+
+        auditLogService.record(
+                AuditEventType.ALERT_STATUS_UPDATED,
+                "FraudAlert",
+                saved.getAlertId(),
+                oldStatus.name(),
+                AlertStatus.ESCALATED.name(),
+                "Alert " + saved.getAlertId() + " escalated from " + oldStatus + " by " + actorUsername
+        );
+        alertSlaService.recordStatusChange(saved, oldStatus, AlertStatus.ESCALATED, actorUsername,
+                request.reason() != null ? request.reason() : "Alert escalated");
+
+        return alertSlaService.escalate(alertId, previousAssignee, request, actorUsername);
     }
 
     @Transactional(readOnly = true)

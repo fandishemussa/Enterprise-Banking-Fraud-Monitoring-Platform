@@ -8,7 +8,13 @@ import { TransactionStatusBadge } from "@/components/badges/transaction-status-b
 import { formatCurrency, formatDate, titleCase } from "@/lib/formatters";
 import type { BankingTransaction } from "@/types";
 
-export function TransactionsTable({ transactions }: { transactions: BankingTransaction[] }) {
+export function TransactionsTable({
+  transactions,
+  initialSearch,
+}: {
+  transactions: BankingTransaction[];
+  initialSearch?: string;
+}) {
   const columns = useMemo<ColumnDef<BankingTransaction>[]>(
     () => [
       { accessorKey: "transactionId", header: "Transaction ID" },
@@ -34,5 +40,13 @@ export function TransactionsTable({ transactions }: { transactions: BankingTrans
     [],
   );
 
-  return <DataTable columns={columns} data={transactions} searchPlaceholder="Search transactions..." emptyMessage="No transactions found." />;
+  return (
+    <DataTable
+      columns={columns}
+      data={transactions}
+      searchPlaceholder="Search transactions..."
+      emptyMessage="No transactions found."
+      initialGlobalFilter={initialSearch}
+    />
+  );
 }

@@ -126,6 +126,13 @@ def train_pipeline(
     decision_scores = model.decision_function(feature_matrix)
     t = _step("Computed decision scores for score normalization", t)
 
+    # Per-feature training-time averages, used as the baseline model-monitoring/drift_detection
+    # compares live prediction feature values against (see docs/model-monitoring.md).
+    feature_baseline_averages = {
+        name: float(feature_matrix[:, i].mean())
+        for i, name in enumerate(feature_engineering.FEATURE_ORDER)
+    }
+
     metadata = {
         "modelName": "PaySim Isolation Forest Fraud Detector",
         "modelType": "IsolationForest",
@@ -137,6 +144,7 @@ def train_pipeline(
         "modelPath": str(model_path),
         "decisionScoreMin": float(decision_scores.min()),
         "decisionScoreMax": float(decision_scores.max()),
+        "featureBaselineAverages": feature_baseline_averages,
     }
 
     model_manager.save(model, metadata)

@@ -31,6 +31,7 @@ public class JwtService {
                 .subject(user.getUsername())
                 .claim("userId", user.getUserId())
                 .claim("role", user.getRole().name())
+                .claim("tokenVersion", user.getTokenVersion())
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusMillis(expirationMs)))
                 .signWith(signingKey)

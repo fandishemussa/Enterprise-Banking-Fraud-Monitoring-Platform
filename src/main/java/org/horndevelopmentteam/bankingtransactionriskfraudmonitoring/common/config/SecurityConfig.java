@@ -56,6 +56,9 @@ public class SecurityConfig {
         http.authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/login").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                        // Only reachable when springdoc is enabled at all - application-prod.yml sets
+                        // springdoc.api-docs.enabled/swagger-ui.enabled to false, which makes springdoc
+                        // not register these endpoints in the first place (404 regardless of this rule).
                         .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/api-docs/**").permitAll()
                         .requestMatchers("/api/v1/users/**").hasRole("ADMIN")
                         .anyRequest().authenticated())

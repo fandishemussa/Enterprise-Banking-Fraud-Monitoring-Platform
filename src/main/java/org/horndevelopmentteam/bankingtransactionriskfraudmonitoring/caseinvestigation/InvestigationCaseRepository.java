@@ -3,6 +3,7 @@ package org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.caseinvest
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.customer.Customer;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface InvestigationCaseRepository extends JpaRepository<InvestigationCase, Long> {
@@ -10,4 +11,10 @@ public interface InvestigationCaseRepository extends JpaRepository<Investigation
     Optional<InvestigationCase> findByCaseId(String caseId);
 
     long countByCustomerAndDecision(Customer customer, CaseDecision decision);
+
+    List<InvestigationCase> findByCustomer(Customer customer);
+
+    boolean existsByAlert_AlertId(String alertId);
+
+    List<InvestigationCase> findByAssignedTo(String assignedTo);
 }

@@ -6,16 +6,22 @@ import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.account.Acc
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.alert.FraudAlertService;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.audit.AuditEventType;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.audit.AuditLogService;
+import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.common.BadRequestException;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.common.IdSequenceService;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.common.ResourceNotFoundException;
+import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.common.idempotency.IdempotencyService;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.customer.Customer;
+import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.customer.enums.CustomerStatus;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.risk.RiskScore;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.risk.RiskScoringService;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -27,14 +33,45 @@ public class TransactionService {
     private final RiskScoringService riskScoringService;
     private final FraudAlertService fraudAlertService;
     private final AuditLogService auditLogService;
+    private final IdempotencyService idempotencyService;
+
+    private static final String IDEMPOTENCY_ENDPOINT = "transactions";
 
     @Transactional
     public TransactionResponse createTransaction(TransactionRequest request) {
+        return createTransaction(request, null);
+    }
+
+    /** If idempotencyKey is non-blank: a retried request with the same key replays the original
+     * transaction instead of creating a duplicate (see IdempotencyService for the claim protocol). */
+    @Transactional
+    public TransactionResponse createTransaction(TransactionRequest request, String idempotencyKey) {
+        boolean hasKey = idempotencyKey != null && !idempotencyKey.isBlank();
+        if (hasKey) {
+            Optional<String> existingTransactionId = idempotencyService.claim(idempotencyKey, IDEMPOTENCY_ENDPOINT);
+            if (existingTransactionId.isPresent()) {
+                return TransactionResponse.from(findByPublicIdOrThrow(existingTransactionId.get()));
+            }
+        }
+
+        TransactionResponse response = doCreateTransaction(request);
+
+        if (hasKey) {
+            idempotencyService.complete(idempotencyKey, IDEMPOTENCY_ENDPOINT, response.transactionId());
+        }
+        return response;
+    }
+
+    private TransactionResponse doCreateTransaction(TransactionRequest request) {
         Account sourceAccount = accountService.findByPublicIdOrThrow(request.sourceAccountId());
         Account destinationAccount = request.destinationAccountId() != null
                 ? accountService.findByPublicIdOrThrow(request.destinationAccountId())
                 : null;
         Customer customer = sourceAccount.getCustomer();
+        if (customer.getStatus() == CustomerStatus.LOCKED) {
+            throw new BadRequestException("Customer " + customer.getCustomerId()
+                    + " is locked pending fraud investigation and cannot transact");
+        }
 
         BankingTransaction transaction = BankingTransaction.builder()
                 .transactionId(idSequenceService.next("TXN"))
@@ -70,10 +107,8 @@ public class TransactionService {
     }
 
     @Transactional(readOnly = true)
-    public List<TransactionResponse> getAllTransactions() {
-        return transactionRepository.findAll().stream()
-                .map(TransactionResponse::from)
-                .toList();
+    public Page<TransactionResponse> getAllTransactions(Pageable pageable) {
+        return transactionRepository.findAll(pageable).map(TransactionResponse::from);
     }
 
     @Transactional(readOnly = true)

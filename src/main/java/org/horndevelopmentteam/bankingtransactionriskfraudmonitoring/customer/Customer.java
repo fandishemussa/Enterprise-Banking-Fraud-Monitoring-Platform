@@ -1,6 +1,7 @@
 package org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.customer;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -9,6 +10,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
+import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.common.crypto.DeterministicEncryptedStringConverter;
+import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.common.crypto.EncryptedStringConverter;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -37,9 +40,14 @@ public class Customer {
     @Column(nullable = false)
     private String fullName;
 
-    @Column(unique = true, nullable = false)
+    // Deterministic (not random-IV) encryption: this column has a UNIQUE constraint and is looked
+    // up by exact value (CustomerRepository.existsByEmail), which random-IV AES-GCM would break.
+    @Convert(converter = DeterministicEncryptedStringConverter.class)
+    @Column(unique = true, nullable = false, length = 500)
     private String email;
 
+    @Convert(converter = EncryptedStringConverter.class)
+    @Column(length = 500)
     private String phone;
 
     @Column(nullable = false)

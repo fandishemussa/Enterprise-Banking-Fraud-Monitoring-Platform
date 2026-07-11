@@ -6,6 +6,8 @@ import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.alert.Fraud
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.alert.FraudAlertService;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.audit.AuditEventType;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.audit.AuditLogService;
+import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.caseinvestigation.timeline.CaseTimelineEventType;
+import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.caseinvestigation.timeline.CaseTimelineService;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.common.IdSequenceService;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.common.ResourceNotFoundException;
 import org.springframework.stereotype.Service;
@@ -14,10 +16,15 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
 public class InvestigationCaseService {
+
+    private static final String SYSTEM_USER = "system";
+    private static final String SYSTEM_ROLE = "SYSTEM";
 
     private static final Map<AlertPriority, CasePriority> PRIORITY_MAPPING = Map.of(
             AlertPriority.LOW, CasePriority.LOW,
@@ -30,9 +37,15 @@ public class InvestigationCaseService {
     private final FraudAlertService fraudAlertService;
     private final IdSequenceService idSequenceService;
     private final AuditLogService auditLogService;
+    private final CaseTimelineService caseTimelineService;
 
     @Transactional
     public CaseResponse createCase(CreateCaseRequest request) {
+        return createCase(request, SYSTEM_USER, SYSTEM_ROLE);
+    }
+
+    @Transactional
+    public CaseResponse createCase(CreateCaseRequest request, String actorUsername, String actorRole) {
         FraudAlert alert = fraudAlertService.findByPublicIdOrThrow(request.alertId());
         LocalDateTime now = LocalDateTime.now();
 
@@ -58,13 +71,48 @@ public class InvestigationCaseService {
                 saved.getStatus().name(),
                 "Case " + saved.getCaseId() + " created from alert " + alert.getAlertId()
         );
+        caseTimelineService.recordEvent(saved.getCaseId(), CaseTimelineEventType.CASE_CREATED,
+                "Case created", "Created from alert " + alert.getAlertId(), actorUsername, actorRole);
+        if (saved.getAssignedTo() != null && !saved.getAssignedTo().isBlank()) {
+            caseTimelineService.recordEvent(saved.getCaseId(), CaseTimelineEventType.CASE_ASSIGNED,
+                    "Case assigned", "Assigned to " + saved.getAssignedTo(), actorUsername, actorRole);
+        }
 
         return CaseResponse.from(saved);
+    }
+
+    /** Called when an alert's status moves to INVESTIGATING (see FraudAlertController#updateStatus) so
+     * the "one case per alert" investigation workflow actually gets a case without requiring a
+     * separate manual step. A no-op if a case already exists for this alert - re-opening an alert
+     * that was previously investigated should not spawn a duplicate case. */
+    @Transactional
+    public Optional<CaseResponse> ensureCaseForAlert(String alertId, String actorUsername, String actorRole) {
+        if (investigationCaseRepository.existsByAlert_AlertId(alertId)) {
+            return Optional.empty();
+        }
+        CreateCaseRequest request = new CreateCaseRequest(alertId, null,
+                "Auto-created: alert moved to Investigating");
+        return Optional.of(createCase(request, actorUsername, actorRole));
     }
 
     @Transactional(readOnly = true)
     public List<CaseResponse> getAllCases() {
         return investigationCaseRepository.findAll().stream()
+                .map(CaseResponse::from)
+                .toList();
+    }
+
+    /** Same visibility rule as alerts (see FraudAlertService#getAlertsVisibleTo): only the roles that
+     * actually work cases (ANALYST/INVESTIGATOR/TESTER) get scoped to cases assigned to them; ADMIN,
+     * VIEWER, and anything unrecognized (e.g. the anonymous principal when SECURITY_ENABLED=false)
+     * see everything. */
+    @Transactional(readOnly = true)
+    public List<CaseResponse> getCasesVisibleTo(String username, String role) {
+        boolean scoped = "ANALYST".equals(role) || "INVESTIGATOR".equals(role) || "TESTER".equals(role);
+        if (!scoped) {
+            return getAllCases();
+        }
+        return investigationCaseRepository.findByAssignedTo(username).stream()
                 .map(CaseResponse::from)
                 .toList();
     }
@@ -76,8 +124,14 @@ public class InvestigationCaseService {
 
     @Transactional
     public CaseResponse updateCase(String caseId, UpdateCaseRequest request) {
+        return updateCase(caseId, request, SYSTEM_USER, SYSTEM_ROLE);
+    }
+
+    @Transactional
+    public CaseResponse updateCase(String caseId, UpdateCaseRequest request, String actorUsername, String actorRole) {
         InvestigationCase investigationCase = findByPublicIdOrThrow(caseId);
         CaseStatus oldStatus = investigationCase.getStatus();
+        String oldAssignedTo = investigationCase.getAssignedTo();
 
         if (request.status() != null) {
             investigationCase.setStatus(request.status());
@@ -103,11 +157,37 @@ public class InvestigationCaseService {
                 "Case " + saved.getCaseId() + " updated"
         );
 
+        if (request.status() != null && request.status() != oldStatus) {
+            caseTimelineService.recordStatusChange(saved.getCaseId(), oldStatus.name(), saved.getStatus().name(),
+                    actorUsername, "Status changed via case update");
+            caseTimelineService.recordEvent(saved.getCaseId(), CaseTimelineEventType.STATUS_CHANGED,
+                    "Status changed", oldStatus + " -> " + saved.getStatus(), actorUsername, actorRole);
+            if (saved.getStatus() == CaseStatus.ESCALATED) {
+                caseTimelineService.recordEvent(saved.getCaseId(), CaseTimelineEventType.CASE_ESCALATED,
+                        "Case escalated", null, actorUsername, actorRole);
+            } else if (saved.getStatus() == CaseStatus.RESOLVED) {
+                caseTimelineService.recordEvent(saved.getCaseId(), CaseTimelineEventType.CASE_RESOLVED,
+                        "Case resolved", null, actorUsername, actorRole);
+            } else if (saved.getStatus() == CaseStatus.CLOSED) {
+                caseTimelineService.recordEvent(saved.getCaseId(), CaseTimelineEventType.CASE_CLOSED,
+                        "Case closed", null, actorUsername, actorRole);
+            }
+        }
+        if (request.assignedTo() != null && !Objects.equals(request.assignedTo(), oldAssignedTo)) {
+            caseTimelineService.recordEvent(saved.getCaseId(), CaseTimelineEventType.CASE_ASSIGNED,
+                    "Case assigned", "Assigned to " + request.assignedTo(), actorUsername, actorRole);
+        }
+
         return CaseResponse.from(saved);
     }
 
     @Transactional
     public CaseResponse updateDecision(String caseId, CaseDecision decision) {
+        return updateDecision(caseId, decision, SYSTEM_USER, SYSTEM_ROLE);
+    }
+
+    @Transactional
+    public CaseResponse updateDecision(String caseId, CaseDecision decision, String actorUsername, String actorRole) {
         InvestigationCase investigationCase = findByPublicIdOrThrow(caseId);
         CaseDecision oldDecision = investigationCase.getDecision();
         investigationCase.setDecision(decision);
@@ -122,6 +202,8 @@ public class InvestigationCaseService {
                 decision.name(),
                 "Case " + saved.getCaseId() + " decision changed from " + oldDecision + " to " + decision
         );
+        caseTimelineService.recordEvent(saved.getCaseId(), CaseTimelineEventType.DECISION_UPDATED,
+                "Decision updated", oldDecision + " -> " + decision, actorUsername, actorRole);
 
         return CaseResponse.from(saved);
     }

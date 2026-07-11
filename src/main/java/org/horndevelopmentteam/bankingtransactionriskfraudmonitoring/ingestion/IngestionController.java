@@ -3,6 +3,7 @@ package org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.ingestion;
 import lombok.RequiredArgsConstructor;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.common.ApiResponse;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.common.BadRequestException;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -21,6 +22,7 @@ public class IngestionController {
     private final CsvIngestionService csvIngestionService;
 
     @PostMapping("/upload")
+    @PreAuthorize("@access.allow('ADMIN', 'ANALYST', 'TESTER')")
     public ApiResponse<IngestionRunResponse> upload(@RequestParam("file") MultipartFile file) {
         if (file.isEmpty()) {
             throw new BadRequestException("Uploaded file is empty");
@@ -33,11 +35,13 @@ public class IngestionController {
     }
 
     @GetMapping("/runs")
+    @PreAuthorize("@access.allow('ADMIN', 'ANALYST', 'INVESTIGATOR', 'VIEWER', 'TESTER')")
     public ApiResponse<List<IngestionRunResponse>> getRuns() {
         return ApiResponse.success(csvIngestionService.getAllRuns());
     }
 
     @GetMapping("/rejected-records")
+    @PreAuthorize("@access.allow('ADMIN', 'ANALYST', 'INVESTIGATOR', 'VIEWER', 'TESTER')")
     public ApiResponse<List<RejectedTransactionResponse>> getRejectedRecords() {
         return ApiResponse.success(csvIngestionService.getRejectedRecords());
     }

@@ -1,0 +1,33 @@
+# Activate with SPRING_PROFILES_ACTIVE=prod. Tightens defaults that are convenient for local dev
+# but wrong for any real deployment.
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+management:
+  server:
+    # Actuator (including /prometheus) served on its own port, off the public app port entirely -
+    # firewall this port to your scraper/internal network rather than relying on app-level auth
+    # for it. Dev/default profile keeps everything on the one port for local convenience.
+    port: ${MANAGEMENT_PORT:8090}
+
+logging:
+  level:
+    root: INFO
+    org.hibernate.SQL: WARN
+  # JSON logs (Elastic Common Schema) for log aggregators (ELK/Datadog/CloudWatch etc) instead of
+  # the human-readable console format used in dev. RequestIdFilter's MDC "requestId" is included
+  # automatically - every log line for a request can be correlated by that field, and it's also
+  # returned to the client as the X-Request-Id response header and in ErrorResponse.traceId.
+  structured:
+    format:
+      console: ecs
+
+spring:
+  jpa:
+    show-sql: false
+    hibernate:
+      # Schema is managed exclusively by Flyway migrations in prod - never let Hibernate guess.
+      ddl-auto: validate

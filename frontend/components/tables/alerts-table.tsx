@@ -2,16 +2,17 @@
 
 import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { UserPlus } from "lucide-react";
+import { UserPlus, ArrowUpCircle } from "lucide-react";
 import { DataTable } from "@/components/tables/data-table";
 import { RiskBadge } from "@/components/badges/risk-badge";
 import { AlertStatusBadge } from "@/components/badges/alert-status-badge";
+import { AlertEscalationForm } from "@/components/sla/alert-escalation-form";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogClose } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { useAssignableUsers } from "@/hooks/use-assignable-users";
 import { formatDate, titleCase } from "@/lib/formatters";
-import type { AlertStatus, FraudAlert } from "@/types";
+import type { AlertEscalationPayload, AlertStatus, FraudAlert } from "@/types";
 
 const ALERT_STATUSES: AlertStatus[] = [
   "OPEN",
@@ -27,13 +28,17 @@ export function AlertsTable({
   alerts,
   onChangeStatus,
   onAssign,
+  onEscalate,
 }: {
   alerts: FraudAlert[];
   onChangeStatus?: (alertId: string, status: string) => Promise<unknown>;
   onAssign?: (alertId: string, assignedTo: string) => Promise<unknown>;
+  onEscalate?: (alertId: string, payload: AlertEscalationPayload) => Promise<unknown>;
 }) {
   const [assignTarget, setAssignTarget] = useState<FraudAlert | null>(null);
   const [assignee, setAssignee] = useState("");
+  const [escalateTarget, setEscalateTarget] = useState<string | null>(null);
+  const { data: assignableUsers } = useAssignableUsers();
 
   const columns = useMemo<ColumnDef<FraudAlert>[]>(
     () => [
@@ -67,23 +72,32 @@ export function AlertsTable({
       {
         id: "actions",
         header: "",
-        cell: ({ row }) =>
-          onAssign ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setAssignTarget(row.original);
-                setAssignee(row.original.assignedTo ?? "");
-              }}
-            >
-              <UserPlus className="mr-1.5 h-3.5 w-3.5" />
-              Assign
-            </Button>
-          ) : null,
+        cell: ({ row }) => (
+          <div className="flex items-center gap-1">
+            {onAssign && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setAssignTarget(row.original);
+                  setAssignee(row.original.assignedTo ?? "");
+                }}
+              >
+                <UserPlus className="mr-1.5 h-3.5 w-3.5" />
+                Assign
+              </Button>
+            )}
+            {onEscalate && (
+              <Button variant="ghost" size="sm" onClick={() => setEscalateTarget(row.original.alertId)}>
+                <ArrowUpCircle className="mr-1.5 h-3.5 w-3.5" />
+                Escalate
+              </Button>
+            )}
+          </div>
+        ),
       },
     ],
-    [onChangeStatus, onAssign],
+    [onChangeStatus, onAssign, onEscalate],
   );
 
   return (
@@ -96,11 +110,14 @@ export function AlertsTable({
             <DialogTitle>Assign {assignTarget?.alertId}</DialogTitle>
             <DialogClose onClick={() => setAssignTarget(null)} />
           </DialogHeader>
-          <Input
-            value={assignee}
-            onChange={(event) => setAssignee(event.target.value)}
-            placeholder="analyst.username"
-          />
+          <Select value={assignee} onChange={(event) => setAssignee(event.target.value)}>
+            <option value="">Select a user...</option>
+            {assignableUsers.map((user) => (
+              <option key={user.username} value={user.username}>
+                {user.fullName} ({user.username}) - {titleCase(user.role)}
+              </option>
+            ))}
+          </Select>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAssignTarget(null)}>
               Cancel
@@ -116,6 +133,16 @@ export function AlertsTable({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {onEscalate && (
+        <AlertEscalationForm
+          alertId={escalateTarget}
+          onOpenChange={(open) => !open && setEscalateTarget(null)}
+          onEscalate={async (alertId, payload) => {
+            await onEscalate(alertId, payload);
+          }}
+        />
+      )}
     </>
   );
 }

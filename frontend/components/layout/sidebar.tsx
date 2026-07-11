@@ -19,6 +19,11 @@ import {
   ShieldCheck,
   FlaskConical,
   UserCog,
+  ListChecks,
+  Timer,
+  Radio,
+  Activity,
+  Lock,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
@@ -46,8 +51,15 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: "Transactions", href: "/transactions", icon: ArrowLeftRight },
       { label: "Risk Scores", href: "/risk-scores", icon: Gauge },
+      { label: "Risk Rules", href: "/risk-rules", icon: ListChecks },
       { label: "Fraud Alerts", href: "/alerts", icon: ShieldAlert },
       { label: "Investigation Cases", href: "/cases", icon: FolderSearch },
+      {
+        label: "SLA Monitoring",
+        href: "/sla-monitoring",
+        icon: Timer,
+        roles: ["ADMIN", "ANALYST", "INVESTIGATOR", "VIEWER"],
+      },
     ],
   },
   {
@@ -63,15 +75,37 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "Pipeline Observability", href: "/pipeline-observability", icon: Workflow },
       { label: "Data Quality", href: "/data-quality", icon: CheckCircle2 },
       { label: "Dead Letter Queue", href: "/dead-letter", icon: Inbox },
+      {
+        label: "Streaming Monitor",
+        href: "/streaming-monitor",
+        icon: Radio,
+        roles: ["ADMIN", "ANALYST", "TESTER"],
+      },
     ],
   },
   {
     label: "Governance",
-    items: [{ label: "Audit Logs", href: "/audit-logs", icon: ScrollText }],
+    items: [
+      { label: "Audit Logs", href: "/audit-logs", icon: ScrollText },
+      {
+        label: "Customer Locks",
+        href: "/customer-locks",
+        icon: Lock,
+        roles: ["ADMIN", "INVESTIGATOR"],
+      },
+    ],
   },
   {
     label: "ML Operations",
-    items: [{ label: "ML Service", href: "/ml-service", icon: Cpu }],
+    items: [
+      { label: "ML Service", href: "/ml-service", icon: Cpu },
+      {
+        label: "Model Monitoring",
+        href: "/model-monitoring",
+        icon: Activity,
+        roles: ["ADMIN", "ANALYST", "VIEWER"],
+      },
+    ],
   },
   {
     label: "Testing",

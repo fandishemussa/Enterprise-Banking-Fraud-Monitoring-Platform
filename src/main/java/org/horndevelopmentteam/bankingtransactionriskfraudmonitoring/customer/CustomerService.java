@@ -1,20 +1,14 @@
 package org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.customer;
 
 import lombok.RequiredArgsConstructor;
-import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.alert.AlertStatus;
-import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.alert.FraudAlertRepository;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.audit.AuditEventType;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.audit.AuditLogService;
-import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.caseinvestigation.CaseDecision;
-import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.caseinvestigation.InvestigationCaseRepository;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.common.IdSequenceService;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.common.ResourceNotFoundException;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.customer.dto.CustomerRequest;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.customer.dto.CustomerResponse;
-import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.customer.dto.CustomerRiskProfileResponse;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.customer.enums.CustomerRiskLevel;
 import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.customer.enums.CustomerStatus;
-import org.horndevelopmentteam.bankingtransactionriskfraudmonitoring.transaction.TransactionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,9 +22,6 @@ public class CustomerService {
     private final CustomerRepository customerRepository;
     private final IdSequenceService idSequenceService;
     private final AuditLogService auditLogService;
-    private final TransactionRepository transactionRepository;
-    private final FraudAlertRepository fraudAlertRepository;
-    private final InvestigationCaseRepository investigationCaseRepository;
 
     @Transactional
     public CustomerResponse createCustomer(CustomerRequest request) {
@@ -86,24 +77,5 @@ public class CustomerService {
     public Customer findByPublicIdOrThrow(String customerId) {
         return customerRepository.findByCustomerId(customerId)
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + customerId));
-    }
-
-    @Transactional(readOnly = true)
-    public CustomerRiskProfileResponse getRiskProfile(String customerId) {
-        Customer customer = findByPublicIdOrThrow(customerId);
-        long totalTransactions = transactionRepository.findByCustomer(customer).size();
-        long totalOpenAlerts = fraudAlertRepository.countByCustomerAndStatus(customer, AlertStatus.OPEN);
-        long totalConfirmedFraudCases = investigationCaseRepository.countByCustomerAndDecision(
-                customer, CaseDecision.CONFIRMED_FRAUD);
-
-        return new CustomerRiskProfileResponse(
-                customer.getCustomerId(),
-                customer.getFullName(),
-                customer.getRiskLevel(),
-                customer.getStatus(),
-                totalTransactions,
-                totalOpenAlerts,
-                totalConfirmedFraudCases
-        );
     }
 }

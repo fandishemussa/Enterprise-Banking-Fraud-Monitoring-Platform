@@ -1,18 +1,28 @@
+import hmac
 import logging
 from contextlib import asynccontextmanager
+from typing import List
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.drift_detection import compute_drift
 from app.model import ModelManager, train_pipeline
+from app.monitoring import append_retraining_history, get_retraining_history, get_score_distribution, get_summary
 from app.paysim_loader import dataset_available
+from app.prediction_logger import log_prediction, read_predictions
 from app.schemas import (
     BatchScoreRequest,
     BatchScoreResponse,
+    FeatureDriftResult,
     HealthResponse,
     ModelInfoResponse,
+    MlPredictionLog,
+    MonitoringSummaryResponse,
     RetrainResponse,
+    RetrainingHistoryEntry,
+    ScoreDistribution,
     TransactionScoreRequest,
     TransactionScoreResponse,
 )
@@ -52,6 +62,15 @@ app.add_middleware(
 )
 
 
+def require_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    """Guards the compute-costly / abusable endpoints (score, batch-score, retrain). No-op if
+    ML_API_KEY isn't configured, so local dev / the existing test suite keep working unchanged."""
+    if not settings.ml_api_key:
+        return
+    if not x_api_key or not hmac.compare_digest(x_api_key, settings.ml_api_key):
+        raise HTTPException(status_code=401, detail="Missing or invalid X-API-Key")
+
+
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse(
@@ -64,17 +83,20 @@ def health() -> HealthResponse:
     )
 
 
-@app.post("/api/v1/score", response_model=TransactionScoreResponse)
+@app.post("/api/v1/score", response_model=TransactionScoreResponse, dependencies=[Depends(require_api_key)])
 def score(request: TransactionScoreRequest) -> TransactionScoreResponse:
-    return score_transaction(request, model_manager, settings.ml_service_version)
+    response = score_transaction(request, model_manager, settings.ml_service_version)
+    log_prediction(settings.predictions_log_path_resolved, request, response)
+    return response
 
 
-@app.post("/api/v1/batch-score", response_model=BatchScoreResponse)
+@app.post("/api/v1/batch-score", response_model=BatchScoreResponse, dependencies=[Depends(require_api_key)])
 def batch_score(request: BatchScoreRequest) -> BatchScoreResponse:
-    results = [
-        score_transaction(transaction, model_manager, settings.ml_service_version)
-        for transaction in request.transactions
-    ]
+    results = []
+    for transaction in request.transactions:
+        result = score_transaction(transaction, model_manager, settings.ml_service_version)
+        log_prediction(settings.predictions_log_path_resolved, transaction, result)
+        results.append(result)
     return BatchScoreResponse(total=len(results), results=results)
 
 
@@ -95,7 +117,7 @@ def model_info() -> ModelInfoResponse:
     )
 
 
-@app.post("/api/v1/retrain", response_model=RetrainResponse)
+@app.post("/api/v1/retrain", response_model=RetrainResponse, dependencies=[Depends(require_api_key)])
 def retrain() -> RetrainResponse:
     if not dataset_available(settings.paysim_data_path_resolved):
         return RetrainResponse(
@@ -116,6 +138,8 @@ def retrain() -> RetrainResponse:
         logger.exception("Model training failed")
         raise HTTPException(status_code=500, detail=f"Model training failed: {ex}") from ex
 
+    append_retraining_history(settings.retraining_history_log_path_resolved, metadata)
+
     return RetrainResponse(
         success=True,
         message="Model trained successfully.",
@@ -123,3 +147,33 @@ def retrain() -> RetrainResponse:
         modelVersion=metadata["modelVersion"],
         modelPath=metadata["modelPath"],
     )
+
+
+@app.get("/api/v1/monitoring/summary", response_model=MonitoringSummaryResponse)
+def monitoring_summary() -> MonitoringSummaryResponse:
+    return get_summary(
+        settings.predictions_log_path_resolved,
+        model_manager,
+        dataset_available(settings.paysim_data_path_resolved),
+    )
+
+
+@app.get("/api/v1/monitoring/predictions", response_model=List[MlPredictionLog])
+def monitoring_predictions(limit: int = 100) -> List[MlPredictionLog]:
+    return read_predictions(settings.predictions_log_path_resolved, limit=limit)
+
+
+@app.get("/api/v1/monitoring/score-distribution", response_model=ScoreDistribution)
+def monitoring_score_distribution() -> ScoreDistribution:
+    return get_score_distribution(settings.predictions_log_path_resolved)
+
+
+@app.get("/api/v1/monitoring/drift", response_model=List[FeatureDriftResult])
+def monitoring_drift() -> List[FeatureDriftResult]:
+    recent_predictions = read_predictions(settings.predictions_log_path_resolved, limit=500)
+    return compute_drift(model_manager, recent_predictions)
+
+
+@app.get("/api/v1/monitoring/retraining-history", response_model=List[RetrainingHistoryEntry])
+def monitoring_retraining_history() -> List[RetrainingHistoryEntry]:
+    return get_retraining_history(settings.retraining_history_log_path_resolved)

@@ -70,3 +70,53 @@ class RetrainResponse(BaseModel):
     modelTrained: bool
     modelVersion: Optional[str] = None
     modelPath: Optional[str] = None
+
+
+class MlPredictionLog(BaseModel):
+    predictionId: str
+    transactionId: str
+    mlScore: int
+    riskLevel: str
+    isAnomaly: bool
+    fallbackMode: bool
+    modelVersion: str
+    featureValues: dict = {}
+    createdAt: datetime
+
+
+class ScoreDistribution(BaseModel):
+    low: int
+    medium: int
+    high: int
+    critical: int
+
+
+class MonitoringSummaryResponse(BaseModel):
+    totalPredictions: int
+    averageMlScore: float
+    highRiskPredictionCount: int
+    criticalRiskPredictionCount: int
+    anomalyCount: int
+    fallbackModeCount: int
+    fallbackRate: float
+    modelVersion: Optional[str] = None
+    lastTrainingDate: Optional[datetime] = None
+    datasetAvailable: bool
+    modelLoaded: bool
+
+
+class FeatureDriftResult(BaseModel):
+    featureName: str
+    baselineAverage: float
+    currentAverage: float
+    driftScore: float
+    driftStatus: str
+
+
+class RetrainingHistoryEntry(BaseModel):
+    modelVersion: str
+    trainingDate: datetime
+    datasetName: str
+    numberOfTrainingRows: int
+    status: str
+    metrics: dict = {}
