@@ -7,7 +7,7 @@ RUN chmod +x mvnw && ./mvnw -B dependency:go-offline
 COPY src ./src
 RUN ./mvnw -B clean package -DskipTests
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:25-jre
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/* \
     && groupadd --system app && useradd --system --gid app --no-create-home app
