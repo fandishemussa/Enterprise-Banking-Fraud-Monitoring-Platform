@@ -145,6 +145,51 @@ on failure instead of throwing, so the UI can show a clear failure state without
 - [ ] Logging out clears the session and redirects to `/login`
 - [ ] Stop the backend and confirm every page falls back to mock data with the demo banner visible
 - [ ] `npm run build` succeeds with no type errors
+## Screenshots
+
+A quick visual tour of the platform. Full-size images and more detail live in
+[docs/screenshots/](docs/screenshots/README.md).
+
+### Login
+
+JWT-backed login. A default `ADMIN` user is auto-created on first startup, with per-role demo users
+seeded in the dev profile (see [Demo users](#demo-users-dev-profile-only)).
+
+![Login screen](docs/screenshots/login.png)
+
+### Dashboard
+
+High-level overview of monitored transaction volume, live risk scores, and aggregate fraud metrics.
+
+![Fraud monitoring dashboard](docs/screenshots/dashboard.png)
+
+### Transactions
+
+Searchable, filterable transaction ledger showing per-transaction risk levels and scoring sources
+(rules engine vs. ML service).
+
+![Transactions view](docs/screenshots/transactions.png)
+
+### Fraud alerts
+
+Real-time fraud alerts raised when a transaction crosses the configured risk threshold, with
+assignment, escalation, and drill-down into the investigation workflow.
+
+![Fraud alerts view](docs/screenshots/alerts.png)
+
+### Customer Risk 360
+
+A single page aggregating a customer's full transaction/alert/case history, risk and volume trend
+charts, device/country behavior, and fraud-ring linkages.
+
+![Customer Risk 360 view](docs/screenshots/customer-risk-360.png)
+
+### ML model monitoring
+
+The Model Monitoring dashboard: prediction volume, fallback rate, score distribution, per-feature
+drift vs. the training baseline, and retraining history for the FastAPI Isolation Forest service.
+
+![ML service model monitoring](docs/screenshots/ml-service.png)
 
 ## Troubleshooting
 

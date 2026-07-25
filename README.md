@@ -80,6 +80,53 @@ topic for anything that fails to process.
 | `security` | JWT issuing/parsing, request authentication filter, method-level RBAC guard |
 | `testtransaction` | Single-call test harness: submit a transaction, get back transaction + risk score + alert |
 | `common` | API envelope, exception handling, security/CORS config, ID sequences, PII crypto, idempotency |
+## Screenshots
+
+A quick visual tour of the platform. Full-size images and more detail live in
+[docs/screenshots/](docs/screenshots/README.md).
+
+### Login
+
+JWT-backed login. A default `ADMIN` user is auto-created on first startup, with per-role demo users
+seeded in the dev profile (see [Demo users](#demo-users-dev-profile-only)).
+
+![Login screen](docs/screenshots/login.png)
+
+### Dashboard
+
+High-level overview of monitored transaction volume, live risk scores, and aggregate fraud metrics.
+
+![Fraud monitoring dashboard](docs/screenshots/dashboard.png)
+
+### Transactions
+
+Searchable, filterable transaction ledger showing per-transaction risk levels and scoring sources
+(rules engine vs. ML service).
+
+![Transactions view](docs/screenshots/transactions.png)
+
+### Fraud alerts
+
+Real-time fraud alerts raised when a transaction crosses the configured risk threshold, with
+assignment, escalation, and drill-down into the investigation workflow.
+
+![Fraud alerts view](docs/screenshots/alerts.png)
+
+### Customer Risk 360
+
+A single page aggregating a customer's full transaction/alert/case history, risk and volume trend
+charts, device/country behavior, and fraud-ring linkages.
+
+![Customer Risk 360 view](docs/screenshots/customer-risk-360.png)
+
+### ML model monitoring
+
+The Model Monitoring dashboard: prediction volume, fallback rate, score distribution, per-feature
+drift vs. the training baseline, and retraining history for the FastAPI Isolation Forest service.
+
+![ML service model monitoring](docs/screenshots/ml-service.png)
+
+## Tech stack
 
 ## Feature highlights
 
