@@ -2,9 +2,9 @@
   "modelName": "PaySim Isolation Forest Fraud Detector",
   "modelType": "IsolationForest",
   "modelVersion": "1.0.0",
-  "trainingDate": "2026-07-09T19:25:49.960101+00:00",
+  "trainingDate": "2026-07-25T23:34:21.523876+00:00",
   "datasetName": "PaySim Synthetic Financial Transactions",
-  "numberOfTrainingRows": 200000,
+  "numberOfTrainingRows": 2000000,
   "featureList": [
     "amount",
     "hour_of_day",
@@ -23,7 +23,25 @@
     "transaction_type_encoded",
     "flagged_fraud"
   ],
-  "modelPath": "C:\\Users\\Owner\\IdeaProjects\\banking-transaction-risk-fraud-monitoring\\ml-service\\models\\fraud_model.joblib",
-  "decisionScoreMin": -0.2283341846932434,
-  "decisionScoreMax": 0.13061304673062485
+  "modelPath": "/app/models/fraud_model.joblib",
+  "decisionScoreMin": -0.24454335845707176,
+  "decisionScoreMax": 0.1281994367448539,
+  "featureBaselineAverages": {
+    "amount": 161188.20183807,
+    "hour_of_day": 14.9545525,
+    "transaction_frequency": 2.5020755,
+    "failed_attempt_count": 1.0005235,
+    "country_risk_score": 24.5604735,
+    "new_device": 0.0999945,
+    "new_country": 0.050439,
+    "merchant_risk_score": 24.526028,
+    "customer_average_amount_ratio": 1.0,
+    "source_old_balance": 857419.90510072,
+    "source_new_balance": 878684.2852580901,
+    "destination_old_balance": 996011.6269772549,
+    "destination_new_balance": 1114418.039815985,
+    "balance_delta": -182452.58199544,
+    "transaction_type_encoded": 1.48158,
+    "flagged_fraud": 0.0
+  }
 }

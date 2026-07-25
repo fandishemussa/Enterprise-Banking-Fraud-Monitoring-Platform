@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     fallback_mode_enabled: bool = True
     # PaySim's real Kaggle export is 6M+ rows; training on all of it can exceed available RAM
     # on a dev machine. 0 means "use every row" for users with enough memory.
-    train_sample_rows: int = 200_000
+    train_sample_rows: int = 2000000
     cors_allowed_origins: str = "http://localhost:3000"
     # Shared secret the Spring Boot backend must send as X-API-Key on /score, /batch-score, and
     # /retrain (the compute-costly / abusable endpoints). Left blank (the default), those endpoints

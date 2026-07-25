@@ -282,4 +282,3 @@ drift vs. the training baseline, and retraining history for the FastAPI Isolatio
 
 ![ML service model monitoring](docs/screenshots/ml-service.png)
 
-## Tech stack
